@@ -58,6 +58,10 @@ export function CreateProjectModal({
   }
 
   const canSubmit = !validate(name) && !isCreating
+  const available = STARTER_OPTIONS.filter((o) => o.available)
+  const blankOptions = available.filter((o) => o.kind === 'blank')
+  const templateOptions = available.filter((o) => o.kind === 'template')
+  const selected = available.find((o) => o.id === starter)
 
   return (
     <Modal open={open} onClose={isCreating ? () => {} : onClose} title="Create project">
@@ -95,46 +99,92 @@ export function CreateProjectModal({
           <span className="label" id="starter-label">
             Starting point
           </span>
-          <p className="create-hint">Choose a foundation. More templates unlock as runtimes expand.</p>
-          <div
-            className="starter-grid"
-            role="radiogroup"
-            aria-labelledby="starter-label"
-          >
-            {STARTER_OPTIONS.filter((o) => o.available).map((opt) => {
-              const selected = starter === opt.id
-              return (
-                <button
-                  key={opt.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  className={`starter-card ${selected ? 'selected' : ''}`}
-                  onClick={() => setStarter(opt.id)}
-                  disabled={isCreating}
-                >
-                  <span className="starter-label">{opt.label}</span>
-                  <span className="starter-desc">{opt.description}</span>
-                  {selected && (
-                    <span className="starter-check" aria-hidden>
-                      ✓
-                    </span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
+          <p className="create-hint">
+            <strong>Blank</strong> starts empty. <strong>Templates</strong> create a working
+            website you can edit or replace entirely.
+          </p>
+
+          {blankOptions.length > 0 && (
+            <>
+              <p className="starter-group-label">From zero</p>
+              <div className="starter-grid" role="radiogroup" aria-labelledby="starter-label">
+                {blankOptions.map((opt) => {
+                  const selectedOpt = starter === opt.id
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={selectedOpt}
+                      className={`starter-card ${selectedOpt ? 'selected' : ''} starter-blank`}
+                      onClick={() => setStarter(opt.id)}
+                      disabled={isCreating}
+                    >
+                      <span className="starter-label">{opt.label}</span>
+                      <span className="starter-desc">{opt.description}</span>
+                      {opt.filesHint && (
+                        <span className="starter-meta">{opt.filesHint}</span>
+                      )}
+                      {selectedOpt && (
+                        <span className="starter-check" aria-hidden>
+                          ✓
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            </>
+          )}
+
+          {templateOptions.length > 0 && (
+            <>
+              <p className="starter-group-label">Templates</p>
+              <div className="starter-grid" role="radiogroup" aria-label="Templates">
+                {templateOptions.map((opt) => {
+                  const selectedOpt = starter === opt.id
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={selectedOpt}
+                      className={`starter-card ${selectedOpt ? 'selected' : ''}`}
+                      onClick={() => setStarter(opt.id)}
+                      disabled={isCreating}
+                    >
+                      <span className="starter-label">{opt.label}</span>
+                      <span className="starter-desc">{opt.description}</span>
+                      {opt.tech && <span className="starter-tech">{opt.tech}</span>}
+                      {opt.filesHint && (
+                        <span className="starter-meta">{opt.filesHint}</span>
+                      )}
+                      {selectedOpt && (
+                        <span className="starter-check" aria-hidden>
+                          ✓
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            </>
+          )}
+
+          {selected && (
+            <p className="starter-selected-hint">
+              {selected.kind === 'blank'
+                ? 'You will get an empty workspace. Create files when you are ready.'
+                : `Creates a working project (${selected.filesHint ?? 'template files'}). Preview will show the site immediately where supported.`}
+            </p>
+          )}
         </div>
 
         <div className="modal-footer create-footer">
           <Button variant="ghost" onClick={onClose} disabled={isCreating}>
             Cancel
           </Button>
-          <Button
-            variant="primary"
-            onClick={handleSubmit}
-            disabled={!canSubmit}
-          >
+          <Button variant="primary" onClick={handleSubmit} disabled={!canSubmit}>
             {isCreating ? (
               <span className="loading-text">
                 <span className="spinner" aria-hidden />

@@ -540,12 +540,13 @@ export function buildStarterFiles(starter: StarterTemplate): ProjectFile[] {
       file('script.js', 'script.js', TAILWIND_JS),
     ]
   }
-  // blank (default)
-  return [
-    file('index.html', 'index.html', BLANK_HTML),
-    file('style.css', 'style.css', BLANK_CSS),
-    file('script.js', 'script.js', BLANK_JS),
-  ]
+  // blank — truly empty workspace
+  if (starter === 'blank') {
+    return []
+  }
+
+  // fallback empty for unknown / unavailable templates
+  return []
 }
 
 export { folder as makeFolder, file as makeFile }

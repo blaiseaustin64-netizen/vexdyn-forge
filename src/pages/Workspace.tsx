@@ -88,6 +88,24 @@ export function Workspace({ project: initial, onBack }: WorkspaceProps) {
     [ws.project.id, ws.files]
   )
 
+  // Auto-run preview once when opening a project that has HTML (templates)
+  const autoPreviewDone = useRef(false)
+  useEffect(() => {
+    if (autoPreviewDone.current) return
+    const hasHtml = ws.files.some(
+      (f) => f.kind === 'file' && (f.name === 'index.html' || f.name.endsWith('.html'))
+    )
+    if (hasHtml) {
+      autoPreviewDone.current = true
+      // Defer so preview panel is mounted
+      const t = window.setTimeout(() => {
+        ws.runPreview()
+        setRunState('running')
+      }, 120)
+      return () => window.clearTimeout(t)
+    }
+  }, [ws.files, ws])
+
   const activeLang = ws.activeFile
     ? languageFromFilename(ws.activeFile.name)
     : undefined
@@ -727,11 +745,34 @@ export function Workspace({ project: initial, onBack }: WorkspaceProps) {
                 <p>This file type cannot be edited as text.</p>
               </div>
             ) : (
-              <div className="editor-empty">
-                <p>Select a file to edit, or create one</p>
-                <p className="panel-hint">
-                  ⌘⇧P Command Palette · ⌘P Go to File · ⌘G Go to Line · ⌘B Sidebar · ⌘J Panel
-                </p>
+              <div className="editor-empty empty-workspace">
+                {ws.files.filter((f) => f.kind === 'file').length === 0 ? (
+                  <>
+                    <p className="empty-title">Your workspace is empty</p>
+                    <p className="panel-hint">
+                      Create a file or folder to get started. Build any structure you want —
+                      nothing is assumed.
+                    </p>
+                    <div className="empty-actions">
+                      <Button variant="primary" size="sm" onClick={() => startCreate('file', null)}>
+                        New File
+                      </Button>
+                      <Button variant="secondary" size="sm" onClick={() => startCreate('folder', null)}>
+                        New Folder
+                      </Button>
+                    </div>
+                    <p className="panel-hint" style={{ marginTop: 16 }}>
+                      Shortcuts: ⌘⇧P Command Palette · ⌘B Sidebar
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p>Select a file to edit, or create one</p>
+                    <p className="panel-hint">
+                      ⌘⇧P Command Palette · ⌘P Go to File · ⌘G Go to Line · ⌘B Sidebar · ⌘J Panel
+                    </p>
+                  </>
+                )}
               </div>
             )}
           </div>

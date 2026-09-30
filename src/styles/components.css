@@ -3667,3 +3667,63 @@ button .forge-icon {
 .cm-host .cm-scroller::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
 }
+
+/* Template selection + empty workspace */
+.starter-group-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 12px 0 8px;
+}
+
+.starter-card.starter-blank {
+  border-style: dashed;
+}
+
+.starter-tech {
+  display: block;
+  font-size: 11px;
+  color: var(--accent-secondary);
+  margin-top: 6px;
+}
+
+.starter-meta {
+  display: block;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  margin-top: 4px;
+}
+
+.starter-selected-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 12px 0 0;
+  line-height: 1.45;
+}
+
+.empty-workspace {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2rem;
+  gap: 8px;
+  height: 100%;
+}
+
+.empty-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.empty-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
