@@ -9,6 +9,12 @@ export interface ForgeSettings {
   editorFontSize: EditorFontSize
   tabSize: TabSize
   reduceMotion: boolean
+  /** Minimap — off by default for performance */
+  minimap: boolean
+  /** Emmet Tab expansion in HTML */
+  emmet: boolean
+  /** Word wrap */
+  wordWrap: boolean
 }
 
 const KEY = 'vexdyn-forge-settings-v1'
@@ -17,6 +23,9 @@ const DEFAULTS: ForgeSettings = {
   editorFontSize: 'md',
   tabSize: 2,
   reduceMotion: false,
+  minimap: false,
+  emmet: true,
+  wordWrap: false,
 }
 
 export function loadSettings(): ForgeSettings {

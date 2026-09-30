@@ -1,10 +1,10 @@
 /**
  * Bottom panel: Problems | Terminal | Output | Debug
- * Terminal is architectural — no fake command execution.
  */
 
 import type { Diagnostic } from '../../services/types'
 import { services } from '../../services'
+import { Icon } from '../ui/Icon'
 
 export type BottomTab = 'problems' | 'terminal' | 'output' | 'debug'
 
@@ -40,12 +40,15 @@ export function BottomPanel({
           onClick={onToggleCollapse}
           aria-label="Expand panel"
         >
+          <Icon name="problems" size={12} />
           Problems
           {errorCount > 0 && <span className="badge error">{errorCount}</span>}
           {warnCount > 0 && <span className="badge warn">{warnCount}</span>}
           <span className="sep">|</span>
+          <Icon name="terminal" size={12} />
           Terminal
           <span className="sep">|</span>
+          <Icon name="output" size={12} />
           Output
         </button>
       </div>
@@ -60,11 +63,10 @@ export function BottomPanel({
           className={active === 'problems' ? 'active' : ''}
           onClick={() => onChange('problems')}
         >
+          <Icon name="problems" size={13} />
           Problems
           {(errorCount > 0 || warnCount > 0) && (
-            <span className="tab-count">
-              {errorCount + warnCount}
-            </span>
+            <span className="tab-count">{errorCount + warnCount}</span>
           )}
         </button>
         <button
@@ -72,6 +74,7 @@ export function BottomPanel({
           className={active === 'terminal' ? 'active' : ''}
           onClick={() => onChange('terminal')}
         >
+          <Icon name="terminal" size={13} />
           Terminal
         </button>
         <button
@@ -79,6 +82,7 @@ export function BottomPanel({
           className={active === 'output' ? 'active' : ''}
           onClick={() => onChange('output')}
         >
+          <Icon name="output" size={13} />
           Output
         </button>
         <button
@@ -86,6 +90,7 @@ export function BottomPanel({
           className={active === 'debug' ? 'active' : ''}
           onClick={() => onChange('debug')}
         >
+          <Icon name="debug" size={13} />
           Debug Console
         </button>
         <div className="bottom-panel-actions">
@@ -96,7 +101,7 @@ export function BottomPanel({
             aria-label="Collapse panel"
             title="Collapse"
           >
-            ▾
+            <Icon name="chevronDown" size={14} />
           </button>
         </div>
       </div>
@@ -114,7 +119,16 @@ export function BottomPanel({
                   className={`problem-row severity-${d.severity}`}
                   onClick={() => onGoToDiagnostic?.(d)}
                 >
-                  <span className="problem-sev">{d.severity}</span>
+                  <Icon
+                    name={
+                      d.severity === 'error'
+                        ? 'error'
+                        : d.severity === 'warning'
+                          ? 'warning'
+                          : 'info'
+                    }
+                    size={13}
+                  />
                   <span className="problem-msg">{d.message}</span>
                   <span className="problem-loc">
                     {d.path}
@@ -132,13 +146,10 @@ export function BottomPanel({
               <p className="panel-empty">Terminal session ready.</p>
             ) : (
               <div className="terminal-stub">
-                <p className="panel-empty">
-                  Terminal interface is ready.
-                </p>
+                <p className="panel-empty">Terminal interface is ready.</p>
                 <p className="panel-hint">
-                  Real command execution (npm, python, build scripts) requires a
-                  secure backend sandbox. Architecture and UI contracts are in
-                  place — no fake output.
+                  Real command execution requires a secure backend sandbox.
+                  Architecture and UI contracts are in place — no fake output.
                 </p>
               </div>
             )}
@@ -150,9 +161,7 @@ export function BottomPanel({
             {outputLines.length === 0 ? (
               <p className="panel-empty">No output yet. Run or build to see logs.</p>
             ) : (
-              <pre className="output-log">
-                {outputLines.join('\n')}
-              </pre>
+              <pre className="output-log">{outputLines.join('\n')}</pre>
             )}
           </div>
         )}

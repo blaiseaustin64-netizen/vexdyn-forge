@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from 'react'
 import type { Project } from '../types/project'
 import { PROJECT_TYPE_LABEL } from '../types/project'
 import { formatRelativeTime, starterLabel } from '../lib/projectStore'
+import { Icon } from './ui/Icon'
+import { StatusIndicator } from './ui/StatusIndicator'
 
 interface ProjectCardProps {
   project: Project
@@ -61,23 +63,13 @@ export function ProjectCard({
     >
       <div className="project-card-main">
         <div className="project-card-icon" aria-hidden>
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-            <rect
-              x="2"
-              y="3"
-              width="14"
-              height="12"
-              rx="2"
-              stroke="currentColor"
-              strokeWidth="1.4"
-            />
-            <path d="M2 7h14" stroke="currentColor" strokeWidth="1.4" />
-          </svg>
+          <Icon name="folder" size={18} />
         </div>
         <div className="project-card-body">
           <h3 className="project-card-name">{project.name}</h3>
           <p className="project-card-meta">
-            <span className="mono">{PROJECT_TYPE_LABEL[project.type]}</span>
+            <StatusIndicator status={project.cloudId ? 'cloud' : 'local'} size="sm" />
+            <span className="mono">{PROJECT_TYPE_LABEL[project.type] ?? project.type}</span>
             <span className="dot" aria-hidden>
               ·
             </span>

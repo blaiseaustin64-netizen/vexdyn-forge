@@ -1,6 +1,5 @@
 /**
  * Language extensions for CodeMirror 6.
- * Supports major web languages; architecture ready for more.
  */
 
 import { html } from '@codemirror/lang-html'
@@ -22,7 +21,14 @@ export function languageExtension(filename: string): {
   switch (lang) {
     case 'html':
     case 'svg':
-      return { lang, ext: html({ selfClosingTags: true }) }
+      return {
+        lang,
+        ext: html({
+          selfClosingTags: true,
+          autoCloseTags: true,
+          matchClosingTags: true,
+        }),
+      }
     case 'css':
       return { lang, ext: css() }
     case 'javascript':

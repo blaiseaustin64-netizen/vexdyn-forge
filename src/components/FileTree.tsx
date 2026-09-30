@@ -1,5 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useCallback } from 'react'
 import type { ProjectFile } from '../types/project'
+import { Icon, FileTypeIcon } from './ui/Icon'
+import { IconButton } from './ui/IconButton'
+import { ContextMenu, type ContextMenuItem } from './ui/ContextMenu'
+import { Tooltip } from './ui/Tooltip'
 
 interface FileTreeProps {
   files: ProjectFile[]
@@ -11,16 +15,7 @@ interface FileTreeProps {
   onNewFolder: (parentId: string | null) => void
   onRename: (file: ProjectFile) => void
   onDelete: (file: ProjectFile) => void
-}
-
-function extIcon(name: string, kind: 'file' | 'folder') {
-  if (kind === 'folder') return '▸'
-  const ext = name.split('.').pop()?.toLowerCase()
-  if (ext === 'html' || ext === 'htm') return '<>'
-  if (ext === 'css') return '#'
-  if (ext === 'js' || ext === 'mjs') return 'JS'
-  if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'].includes(ext || '')) return '▢'
-  return '·'
+  onDuplicate?: (file: ProjectFile) => void
 }
 
 export function FileTree({
@@ -33,9 +28,15 @@ export function FileTree({
   onNewFolder,
   onRename,
   onDelete,
+  onDuplicate,
 }: FileTreeProps) {
-  const [menuId, setMenuId] = useState<string | null>(null)
-  const [addOpen, setAddOpen] = useState(false)
+  const [ctx, setCtx] = useState<{
+    open: boolean
+    x: number
+    y: number
+    target: ProjectFile | null
+    root: boolean
+  }>({ open: false, x: 0, y: 0, target: null, root: false })
 
   const childrenOf = useMemo(() => {
     const map = new Map<string | null, ProjectFile[]>()
@@ -54,6 +55,114 @@ export function FileTree({
     return map
   }, [files])
 
+  const openCtx = useCallback(
+    (e: React.MouseEvent, target: ProjectFile | null, root = false) => {
+      e.preventDefault()
+      e.stopPropagation()
+      setCtx({ open: true, x: e.clientX, y: e.clientY, target, root })
+    },
+    []
+  )
+
+  const closeCtx = useCallback(() => {
+    setCtx((s) => ({ ...s, open: false }))
+  }, [])
+
+  const copyPath = (path: string) => {
+    void navigator.clipboard?.writeText(path)
+  }
+
+  const menuItems: ContextMenuItem[] = useMemo(() => {
+    if (ctx.root || !ctx.target) {
+      return [
+        {
+          id: 'new-file',
+          label: 'New File',
+          icon: 'newFile',
+          onClick: () => onNewFile(null),
+        },
+        {
+          id: 'new-folder',
+          label: 'New Folder',
+          icon: 'newFolder',
+          onClick: () => onNewFolder(null),
+        },
+      ]
+    }
+    const t = ctx.target
+    if (t.kind === 'folder') {
+      return [
+        {
+          id: 'new-file',
+          label: 'New File',
+          icon: 'newFile',
+          onClick: () => onNewFile(t.id),
+        },
+        {
+          id: 'new-folder',
+          label: 'New Folder',
+          icon: 'newFolder',
+          onClick: () => onNewFolder(t.id),
+        },
+        { id: 'sep1', label: '', separator: true },
+        {
+          id: 'rename',
+          label: 'Rename',
+          icon: 'rename',
+          onClick: () => onRename(t),
+        },
+        {
+          id: 'copy-path',
+          label: 'Copy Path',
+          icon: 'copy',
+          onClick: () => copyPath(t.path),
+        },
+        { id: 'sep2', label: '', separator: true },
+        {
+          id: 'delete',
+          label: 'Delete',
+          icon: 'delete',
+          danger: true,
+          onClick: () => onDelete(t),
+        },
+      ]
+    }
+    return [
+      {
+        id: 'open',
+        label: 'Open',
+        icon: 'file',
+        onClick: () => onOpen(t),
+      },
+      {
+        id: 'rename',
+        label: 'Rename',
+        icon: 'rename',
+        onClick: () => onRename(t),
+      },
+      {
+        id: 'duplicate',
+        label: 'Duplicate',
+        icon: 'duplicate',
+        onClick: () => onDuplicate?.(t),
+      },
+      {
+        id: 'copy-path',
+        label: 'Copy Path',
+        icon: 'copy',
+        onClick: () => copyPath(t.path),
+      },
+      { id: 'sep1', label: '', separator: true },
+      {
+        id: 'delete',
+        label: 'Delete',
+        icon: 'delete',
+        danger: true,
+        onClick: () => onDelete(t),
+      },
+    ]
+  }, [ctx, onNewFile, onNewFolder, onRename, onDelete, onDuplicate, onOpen])
+
   const renderNode = (node: ProjectFile, depth: number) => {
     const kids = childrenOf.get(node.id) ?? []
     const isFolder = node.kind === 'folder'
@@ -69,14 +178,27 @@ export function FileTree({
             if (isFolder) onToggle(node.id)
             else onOpen(node)
           }}
-          onContextMenu={(e) => {
-            e.preventDefault()
-            setMenuId(node.id)
+          onContextMenu={(e) => openCtx(e, node)}
+          onDoubleClick={() => {
+            if (!isFolder) onOpen(node)
           }}
         >
           <span className="tree-icon" aria-hidden>
-            {isFolder ? (isOpen ? '▾' : '▸') : extIcon(node.name, 'file')}
+            {isFolder ? (
+              <Icon
+                name={isOpen ? 'chevronDown' : 'chevronRight'}
+                size={14}
+                className="tree-chevron"
+              />
+            ) : (
+              <FileTypeIcon name={node.name} size={14} />
+            )}
           </span>
+          {isFolder && (
+            <span className="tree-folder-icon" aria-hidden>
+              <Icon name={isOpen ? 'folderOpen' : 'folder'} size={14} />
+            </span>
+          )}
           <span className="tree-name" title={node.path}>
             {node.name}
           </span>
@@ -84,71 +206,13 @@ export function FileTree({
             type="button"
             className="tree-more"
             aria-label={`Actions for ${node.name}`}
-            onClick={(e) => {
-              e.stopPropagation()
-              setMenuId(menuId === node.id ? null : node.id)
-            }}
+            onClick={(e) => openCtx(e, node)}
           >
-            •••
+            <Icon name="more" size={14} />
           </button>
-          {menuId === node.id && (
-            <div className="project-menu tree-menu" role="menu">
-              {isFolder && (
-                <>
-                  <button
-                    type="button"
-                    className="project-menu-item"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setMenuId(null)
-                      onNewFile(node.id)
-                    }}
-                  >
-                    New file
-                  </button>
-                  <button
-                    type="button"
-                    className="project-menu-item"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setMenuId(null)
-                      onNewFolder(node.id)
-                    }}
-                  >
-                    New folder
-                  </button>
-                </>
-              )}
-              <button
-                type="button"
-                className="project-menu-item"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setMenuId(null)
-                  onRename(node)
-                }}
-              >
-                Rename
-              </button>
-              <div className="project-menu-sep" />
-              <button
-                type="button"
-                className="project-menu-item project-menu-danger"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setMenuId(null)
-                  onDelete(node)
-                }}
-              >
-                Delete
-              </button>
-            </div>
-          )}
         </div>
         {isFolder && isOpen && kids.length > 0 && (
-          <ul className="tree-children">
-            {kids.map((k) => renderNode(k, depth + 1))}
-          </ul>
+          <ul className="tree-children">{kids.map((k) => renderNode(k, depth + 1))}</ul>
         )}
       </li>
     )
@@ -157,52 +221,52 @@ export function FileTree({
   const roots = childrenOf.get(null) ?? []
 
   return (
-    <aside className="files-panel" aria-label="Project files">
-      <div className="files-header">
-        <span className="files-title">Files</span>
-        <div className="files-add-wrap">
-          <button
-            type="button"
-            className="files-add"
-            aria-label="Add file or folder"
-            onClick={() => setAddOpen((v) => !v)}
-          >
-            +
-          </button>
-          {addOpen && (
-            <div className="project-menu files-add-menu" role="menu">
-              <button
-                type="button"
-                className="project-menu-item"
-                onClick={() => {
-                  setAddOpen(false)
-                  onNewFile(null)
-                }}
-              >
-                New file
-              </button>
-              <button
-                type="button"
-                className="project-menu-item"
-                onClick={() => {
-                  setAddOpen(false)
-                  onNewFolder(null)
-                }}
-              >
-                New folder
-              </button>
-            </div>
-          )}
+    <div
+      className="file-tree"
+      onContextMenu={(e) => {
+        if ((e.target as HTMLElement).closest('.tree-row')) return
+        openCtx(e, null, true)
+      }}
+    >
+      <div className="file-tree-toolbar">
+        <span className="file-tree-title">Files</span>
+        <div className="file-tree-actions">
+          <Tooltip content="New File">
+            <button
+              type="button"
+              className="icon-btn icon-btn-ghost"
+              aria-label="New File"
+              onClick={() => onNewFile(null)}
+            >
+              <Icon name="newFile" size={15} />
+            </button>
+          </Tooltip>
+          <Tooltip content="New Folder">
+            <button
+              type="button"
+              className="icon-btn icon-btn-ghost"
+              aria-label="New Folder"
+              onClick={() => onNewFolder(null)}
+            >
+              <Icon name="newFolder" size={15} />
+            </button>
+          </Tooltip>
         </div>
       </div>
-      <ul className="file-tree">
+      <ul className="tree-list" role="tree">
         {roots.length === 0 ? (
           <li className="tree-empty">No files yet</li>
         ) : (
           roots.map((n) => renderNode(n, 0))
         )}
       </ul>
-    </aside>
+      <ContextMenu
+        open={ctx.open}
+        x={ctx.x}
+        y={ctx.y}
+        items={menuItems}
+        onClose={closeCtx}
+      />
+    </div>
   )
 }
-

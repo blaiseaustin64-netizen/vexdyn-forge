@@ -76,8 +76,38 @@ export function Settings({ onBack }: SettingsProps) {
             <option value={4}>4 spaces</option>
           </select>
         </div>
+        <div className="settings-row">
+          <label htmlFor="emmet">Emmet (HTML Tab expand)</label>
+          <input
+            id="emmet"
+            type="checkbox"
+            checked={settings.emmet}
+            onChange={(e) => update('emmet', e.target.checked)}
+          />
+        </div>
+        <div className="settings-row">
+          <label htmlFor="word-wrap">Word wrap</label>
+          <input
+            id="word-wrap"
+            type="checkbox"
+            checked={settings.wordWrap}
+            onChange={(e) => update('wordWrap', e.target.checked)}
+          />
+        </div>
+        <div className="settings-row">
+          <label htmlFor="minimap">Minimap</label>
+          <input
+            id="minimap"
+            type="checkbox"
+            checked={settings.minimap}
+            onChange={(e) => update('minimap', e.target.checked)}
+            disabled
+            title="Coming soon — off by default for performance"
+          />
+        </div>
         <p className="shell-note">
-          Font size and tab size apply the next time you open a file in the editor.
+          Font size, tab size, Emmet, and wrap apply the next time you open a file in the editor.
+          Minimap is reserved and off by default.
         </p>
       </div>
 
