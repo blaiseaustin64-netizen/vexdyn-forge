@@ -1,0 +1,7 @@
+nodes_modules/
+.env
+.env.*
+!.env.example
+dist/
+.wrangler/
+.dev.vars
