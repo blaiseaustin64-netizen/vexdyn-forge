@@ -1,15 +1,23 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { Button } from '../components/Button'
 import { Input } from '../components/Input'
 import { Modal } from '../components/Modal'
 import { FileTree } from '../components/FileTree'
 import { CodeEditor } from '../components/CodeEditor'
 import { PreviewPanel } from '../components/PreviewPanel'
+import { ActivityBar, type ActivityView } from '../components/panels/ActivityBar'
+import { BottomPanel, type BottomTab } from '../components/panels/BottomPanel'
+import { StatusBar } from '../components/panels/StatusBar'
+import { Breadcrumbs } from '../components/panels/Breadcrumbs'
+import { SearchPanel } from '../components/panels/SearchPanel'
 import { useWorkspace } from '../hooks/useWorkspace'
 import type { Project, ProjectFile } from '../types/project'
-import { isTextFile } from '../types/project'
+import { isTextFile, languageFromFilename } from '../types/project'
 import { validateFilename } from '../lib/filenames'
 import { downloadProject } from '../lib/download'
+import { runBasicDiagnostics } from '../services/localDiagnosticsService'
+import { services } from '../services'
+import type { Diagnostic } from '../services/types'
 
 type MobilePane = 'files' | 'code' | 'preview'
 
@@ -26,6 +34,14 @@ export function Workspace({ project: initial, onBack }: WorkspaceProps) {
   const [downloading, setDownloading] = useState(false)
   const [mobilePane, setMobilePane] = useState<MobilePane>('code')
 
+  const [activity, setActivity] = useState<ActivityView>('explorer')
+  const [bottomTab, setBottomTab] = useState<BottomTab>('problems')
+  const [bottomCollapsed, setBottomCollapsed] = useState(true)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [previewCollapsed, setPreviewCollapsed] = useState(false)
+  const [outputLines, setOutputLines] = useState<string[]>([])
+  const [fullscreenEditor, setFullscreenEditor] = useState(false)
+
   const [createKind, setCreateKind] = useState<'file' | 'folder' | null>(null)
   const [createParent, setCreateParent] = useState<string | null>(null)
   const [createName, setCreateName] = useState('')
@@ -37,6 +53,16 @@ export function Workspace({ project: initial, onBack }: WorkspaceProps) {
 
   const [deleteTarget, setDeleteTarget] = useState<ProjectFile | null>(null)
   const [leaveOpen, setLeaveOpen] = useState(false)
+
+  // Diagnostics
+  const diagnostics = useMemo(
+    () => runBasicDiagnostics(ws.project.id, ws.files),
+    [ws.project.id, ws.files]
+  )
+
+  const activeLang = ws.activeFile
+    ? languageFromFilename(ws.activeFile.name)
+    : undefined
 
   const startCreate = (kind: 'file' | 'folder', parentId: string | null) => {
     setCreateKind(kind)
@@ -99,32 +125,79 @@ export function Workspace({ project: initial, onBack }: WorkspaceProps) {
     setRunning(true)
     setRunOverlay(true)
     setRunSuccess(false)
-    // Execute immediately — animation is visual only
     ws.runPreview()
     setMobilePane('preview')
+    setOutputLines((prev) => [
+      ...prev,
+      `[${new Date().toLocaleTimeString()}] Preview refreshed`,
+    ])
+    // Update runtime status
+    void services.runtime.start(ws.project)
     const reduced =
       typeof document !== 'undefined' &&
       (document.documentElement.dataset.reduceMotion === 'true' ||
         window.matchMedia('(prefers-reduced-motion: reduce)').matches)
-    const duration = reduced ? 120 : 720
+    const duration = reduced ? 120 : 640
     window.setTimeout(() => {
       setRunOverlay(false)
       setRunning(false)
       setRunSuccess(true)
-      window.setTimeout(() => setRunSuccess(false), 600)
+      window.setTimeout(() => setRunSuccess(false), 500)
     }, duration)
   }, [ws])
 
-
   useEffect(() => {
-    if (ws.previewError) setRunSuccess(false)
+    if (ws.previewError) {
+      setRunSuccess(false)
+      setOutputLines((prev) => [
+        ...prev,
+        `[error] ${ws.previewError}`,
+      ])
+      setBottomCollapsed(false)
+      setBottomTab('output')
+    }
   }, [ws.previewError])
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey
+      if (mod && e.key === 'b') {
+        e.preventDefault()
+        setSidebarCollapsed((c) => !c)
+      }
+      if (mod && e.key === 'j') {
+        e.preventDefault()
+        setBottomCollapsed((c) => !c)
+      }
+      if (mod && e.key === 'p') {
+        e.preventDefault()
+        setActivity('search')
+        setSidebarCollapsed(false)
+      }
+      if (mod && e.shiftKey && e.key === 'E') {
+        e.preventDefault()
+        setActivity('explorer')
+        setSidebarCollapsed(false)
+      }
+      if (e.key === 'F11') {
+        e.preventDefault()
+        setFullscreenEditor((f) => !f)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   const handleDownload = async () => {
     setDownloading(true)
     try {
       ws.saveNow()
       await downloadProject(ws.project)
+      setOutputLines((prev) => [
+        ...prev,
+        `[${new Date().toLocaleTimeString()}] Project ZIP downloaded`,
+      ])
     } finally {
       window.setTimeout(() => setDownloading(false), 200)
     }
@@ -135,6 +208,15 @@ export function Workspace({ project: initial, onBack }: WorkspaceProps) {
     setMobilePane('code')
   }
 
+  const handleOpenFileById = (fileId: string, _line?: number) => {
+    const f = ws.files.find((x) => x.id === fileId)
+    if (f) handleOpenFile(f)
+  }
+
+  const handleGoToDiagnostic = (d: Diagnostic) => {
+    handleOpenFileById(d.fileId, d.line)
+  }
+
   const saveLabel =
     ws.saveState === 'saving'
       ? 'Saving…'
@@ -142,8 +224,77 @@ export function Workspace({ project: initial, onBack }: WorkspaceProps) {
         ? 'Unsaved'
         : '✓ Saved'
 
+  const runtimeStatus = services.runtime.getStatus(ws.project.id)
+
+  const sidebarContent = () => {
+    if (activity === 'search') {
+      return (
+        <SearchPanel
+          files={ws.files}
+          onOpenFile={handleOpenFileById}
+        />
+      )
+    }
+    if (activity === 'source') {
+      return (
+        <div className="side-panel-stub">
+          <p className="panel-empty">Source Control</p>
+          <p className="panel-hint">
+            Git integration is planned. Local projects remain fully editable.
+          </p>
+        </div>
+      )
+    }
+    if (activity === 'extensions') {
+      return (
+        <div className="side-panel-stub">
+          <p className="panel-empty">Tools & Integrations</p>
+          <ul className="tools-list">
+            <li>
+              <strong>X-Ray</strong>
+              <span>Check My Site — architecture ready</span>
+            </li>
+            <li>
+              <strong>Deploy</strong>
+              <span>Cloudflare Pages — backend pending</span>
+            </li>
+            <li>
+              <strong>Nyven AI</strong>
+              <span>Project-aware actions — prepared</span>
+            </li>
+            <li>
+              <strong>Brand-in-a-Box</strong>
+              <span>Import brand kit — boundary ready</span>
+            </li>
+          </ul>
+        </div>
+      )
+    }
+    // explorer
+    return (
+      <FileTree
+        files={ws.files}
+        activeFileId={ws.activeFileId}
+        collapsed={ws.collapsed}
+        onOpen={handleOpenFile}
+        onToggle={ws.toggleFolder}
+        onNewFile={(pid) => startCreate('file', pid)}
+        onNewFolder={(pid) => startCreate('folder', pid)}
+        onRename={(f) => {
+          setRenameTarget(f)
+          setRenameName(f.name)
+          setRenameError(null)
+        }}
+        onDelete={setDeleteTarget}
+      />
+    )
+  }
+
   return (
-    <section className="workspace" aria-label="Forge workspace">
+    <section
+      className={`workspace ide-layout ${fullscreenEditor ? 'fullscreen-editor' : ''} ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${previewCollapsed ? 'preview-collapsed' : ''}`}
+      aria-label="Forge workspace"
+    >
       <header className="ws-bar">
         <div className="ws-bar-left">
           <button type="button" className="ws-back" onClick={handleBack}>
@@ -156,6 +307,15 @@ export function Workspace({ project: initial, onBack }: WorkspaceProps) {
           {saveLabel}
         </div>
         <div className="ws-bar-right">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setFullscreenEditor((f) => !f)}
+            className="hide-mobile"
+            title="Toggle fullscreen editor (F11)"
+          >
+            {fullscreenEditor ? 'Exit FS' : 'Fullscreen'}
+          </Button>
           <Button
             variant="secondary"
             size="sm"
@@ -172,24 +332,45 @@ export function Workspace({ project: initial, onBack }: WorkspaceProps) {
       </header>
 
       <div className={`ws-body mobile-pane-${mobilePane}`}>
-        <div className="ws-pane ws-pane-files">
-          <FileTree
-            files={ws.files}
-            activeFileId={ws.activeFileId}
-            collapsed={ws.collapsed}
-            onOpen={handleOpenFile}
-            onToggle={ws.toggleFolder}
-            onNewFile={(pid) => startCreate('file', pid)}
-            onNewFolder={(pid) => startCreate('folder', pid)}
-            onRename={(f) => {
-              setRenameTarget(f)
-              setRenameName(f.name)
-              setRenameError(null)
-            }}
-            onDelete={setDeleteTarget}
-          />
+        {/* Activity bar + sidebar */}
+        <div className="ws-sidebar-rail">
+          <ActivityBar active={activity} onChange={(v) => {
+            setActivity(v)
+            setSidebarCollapsed(false)
+          }} />
+          {!sidebarCollapsed && (
+            <div className="ws-pane ws-pane-files">
+              <div className="side-panel-title">
+                {activity === 'explorer' && 'Explorer'}
+                {activity === 'search' && 'Search'}
+                {activity === 'source' && 'Source Control'}
+                {activity === 'extensions' && 'Tools'}
+                <button
+                  type="button"
+                  className="panel-icon-btn"
+                  onClick={() => setSidebarCollapsed(true)}
+                  aria-label="Collapse sidebar"
+                  title="Collapse (⌘B)"
+                >
+                  ‹
+                </button>
+              </div>
+              {sidebarContent()}
+            </div>
+          )}
+          {sidebarCollapsed && (
+            <button
+              type="button"
+              className="sidebar-expand-btn"
+              onClick={() => setSidebarCollapsed(false)}
+              aria-label="Expand sidebar"
+            >
+              ›
+            </button>
+          )}
         </div>
 
+        {/* Editor center */}
         <div className="ws-pane ws-pane-code editor-panel">
           <div className="editor-tabs" role="tablist">
             {ws.openTabs.map((id) => {
@@ -232,6 +413,9 @@ export function Workspace({ project: initial, onBack }: WorkspaceProps) {
               )
             })}
           </div>
+          {ws.activeFile && (
+            <Breadcrumbs path={ws.activeFile.path} />
+          )}
           <div className="editor-stage">
             {ws.activeFile && isTextFile(ws.activeFile.name) ? (
               <CodeEditor
@@ -243,26 +427,73 @@ export function Workspace({ project: initial, onBack }: WorkspaceProps) {
               />
             ) : ws.activeFile ? (
               <div className="editor-empty">
-                <p>This file type cannot be edited as text in V1.</p>
+                <p>This file type cannot be edited as text.</p>
               </div>
             ) : (
               <div className="editor-empty">
                 <p>Select a file to edit, or create one with +</p>
+                <p className="panel-hint">
+                  Shortcuts: ⌘B sidebar · ⌘J panel · ⌘P search · F11 fullscreen
+                </p>
               </div>
             )}
           </div>
         </div>
 
-        <div className="ws-pane ws-pane-preview">
-          <PreviewPanel
-            files={ws.files}
-            nonce={ws.previewNonce}
-            error={ws.previewError}
-            onRefresh={handleRun}
-            onClearError={() => ws.setPreviewError(null)}
-          />
-        </div>
+        {/* Preview right */}
+        {!previewCollapsed && (
+          <div className="ws-pane ws-pane-preview">
+            <div className="preview-toolbar">
+              <span className="preview-label">Preview</span>
+              <button
+                type="button"
+                className="panel-icon-btn"
+                onClick={() => setPreviewCollapsed(true)}
+                aria-label="Collapse preview"
+                title="Collapse preview"
+              >
+                ›
+              </button>
+            </div>
+            <PreviewPanel
+              files={ws.files}
+              nonce={ws.previewNonce}
+              error={ws.previewError}
+              onRefresh={handleRun}
+              onClearError={() => ws.setPreviewError(null)}
+            />
+          </div>
+        )}
+        {previewCollapsed && (
+          <button
+            type="button"
+            className="preview-expand-btn"
+            onClick={() => setPreviewCollapsed(false)}
+            aria-label="Expand preview"
+          >
+            ‹ Preview
+          </button>
+        )}
       </div>
+
+      {/* Bottom panel */}
+      <BottomPanel
+        active={bottomTab}
+        onChange={setBottomTab}
+        diagnostics={diagnostics}
+        outputLines={outputLines}
+        collapsed={bottomCollapsed}
+        onToggleCollapse={() => setBottomCollapsed((c) => !c)}
+        onGoToDiagnostic={handleGoToDiagnostic}
+      />
+
+      <StatusBar
+        saveState={ws.saveState}
+        language={activeLang}
+        runtime={runtimeStatus}
+        fileCount={ws.files.filter((f) => f.kind === 'file').length}
+        projectName={ws.project.name}
+      />
 
       <nav className="ws-mobile-nav" aria-label="Workspace sections">
         <button
@@ -295,7 +526,6 @@ export function Workspace({ project: initial, onBack }: WorkspaceProps) {
           {downloading ? '…' : 'ZIP'}
         </button>
       </nav>
-
 
       {(runOverlay || runSuccess) && (
         <div

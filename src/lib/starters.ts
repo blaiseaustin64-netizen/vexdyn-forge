@@ -360,6 +360,127 @@ const PORTFOLIO_JS = `// Portfolio interactions — add yours here
 console.log('Portfolio project loaded');
 `
 
+const REACT_APP = `export default function App() {
+  return (
+    <main style={{ fontFamily: 'system-ui', padding: '2rem', background: '#0a0e14', color: '#e8edf2', minHeight: '100vh' }}>
+      <h1>React + Forge</h1>
+      <p>Edit <code>src/App.jsx</code> and expand this project.</p>
+      <p style={{ color: '#9AA5B1' }}>Full React runtime requires a build step (architecture prepared).</p>
+    </main>
+  );
+}
+`
+
+const REACT_INDEX = `import React from 'react';
+import { createRoot } from 'react-dom/client';
+import App from './App.jsx';
+
+const root = createRoot(document.getElementById('root'));
+root.render(<App />);
+`
+
+const REACT_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>React App — Forge</title>
+</head>
+<body>
+  <div id="root"></div>
+  <!-- Static fallback preview until React runtime is connected -->
+  <noscript>Enable JavaScript to run this React app.</noscript>
+</body>
+</html>
+`
+
+const REACT_PKG = `{
+  "name": "forge-react-app",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^5.4.11"
+  }
+}
+`
+
+const REACT_TS_APP = `export default function App() {
+  return (
+    <main style={{ fontFamily: 'system-ui', padding: '2rem', background: '#0a0e14', color: '#e8edf2', minHeight: '100vh' }}>
+      <h1>React + TypeScript + Forge</h1>
+      <p>Edit <code>src/App.tsx</code> and expand this project.</p>
+      <p style={{ color: '#9AA5B1' }}>Full TS/React runtime requires a build step (architecture prepared).</p>
+    </main>
+  );
+}
+`
+
+const REACT_TS_INDEX = `import React from 'react';
+import { createRoot } from 'react-dom/client';
+import App from './App';
+
+const root = createRoot(document.getElementById('root')!);
+root.render(<App />);
+`
+
+const TAILWIND_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tailwind — Forge</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+  <main class="max-w-3xl mx-auto px-6 py-16">
+    <h1 class="text-4xl font-semibold tracking-tight mb-4">Tailwind + Forge</h1>
+    <p class="text-slate-400 mb-8">CDN Tailwind for rapid prototyping. Replace with a proper build when ready.</p>
+    <button class="px-4 py-2 rounded-lg bg-sky-700 hover:bg-sky-600 transition" id="action">
+      Get started
+    </button>
+  </main>
+  <script src="script.js"></script>
+</body>
+</html>
+`
+
+const TAILWIND_CSS = `/* Custom styles on top of Tailwind CDN */
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+}
+`
+
+const TAILWIND_JS = `document.getElementById('action')?.addEventListener('click', () => {
+  alert('Tailwind starter is ready — customize freely.');
+});
+`
+
+const HTML_CSS_JS_README = `# HTML / CSS / JS Project
+
+Structured static web project created in VEXDYN Forge.
+
+## Structure
+
+- \`index.html\` — entry
+- \`css/style.css\` — styles
+- \`js/main.js\` — scripts
+- \`assets/\` — media folder
+
+Edit files and press **Run** to preview.
+`
+
 export function buildStarterFiles(starter: StarterTemplate): ProjectFile[] {
   if (starter === 'landing') {
     return [
@@ -375,7 +496,51 @@ export function buildStarterFiles(starter: StarterTemplate): ProjectFile[] {
       file('script.js', 'script.js', PORTFOLIO_JS),
     ]
   }
-  // blank
+  if (starter === 'html-css-js') {
+    const cssFolder = folder('css', 'css')
+    const jsFolder = folder('js', 'js')
+    const assets = folder('assets', 'assets')
+    return [
+      file('index.html', 'index.html', BLANK_HTML.replace('style.css', 'css/style.css').replace('script.js', 'js/main.js')),
+      cssFolder,
+      file('style.css', 'css/style.css', BLANK_CSS, cssFolder.id),
+      jsFolder,
+      file('main.js', 'js/main.js', BLANK_JS, jsFolder.id),
+      assets,
+      file('README.md', 'README.md', HTML_CSS_JS_README),
+    ]
+  }
+  if (starter === 'react') {
+    const src = folder('src', 'src')
+    return [
+      file('index.html', 'index.html', REACT_HTML),
+      file('package.json', 'package.json', REACT_PKG),
+      src,
+      file('App.jsx', 'src/App.jsx', REACT_APP, src.id),
+      file('main.jsx', 'src/main.jsx', REACT_INDEX, src.id),
+      file('README.md', 'README.md', '# React Starter\\n\\nCreated in VEXDYN Forge.\\n\\nRun \`npm install && npm run dev\` when backend runtime is available.\\n'),
+    ]
+  }
+  if (starter === 'react-ts') {
+    const src = folder('src', 'src')
+    return [
+      file('index.html', 'index.html', REACT_HTML),
+      file('package.json', 'package.json', REACT_PKG.replace('"vite"', '"typescript": "^5.6.3",\\n    "vite"').replace('App.jsx', 'App.tsx')),
+      src,
+      file('App.tsx', 'src/App.tsx', REACT_TS_APP, src.id),
+      file('main.tsx', 'src/main.tsx', REACT_TS_INDEX, src.id),
+      file('tsconfig.json', 'tsconfig.json', '{\\n  "compilerOptions": {\\n    "target": "ES2020",\\n    "jsx": "react-jsx",\\n    "module": "ESNext",\\n    "moduleResolution": "bundler",\\n    "strict": true\\n  },\\n  "include": ["src"]\\n}\\n'),
+      file('README.md', 'README.md', '# React + TypeScript Starter\\n\\nCreated in VEXDYN Forge.\\n'),
+    ]
+  }
+  if (starter === 'tailwind') {
+    return [
+      file('index.html', 'index.html', TAILWIND_HTML),
+      file('style.css', 'style.css', TAILWIND_CSS),
+      file('script.js', 'script.js', TAILWIND_JS),
+    ]
+  }
+  // blank (default)
   return [
     file('index.html', 'index.html', BLANK_HTML),
     file('style.css', 'style.css', BLANK_CSS),

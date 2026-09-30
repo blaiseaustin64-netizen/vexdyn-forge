@@ -10,6 +10,7 @@ import type {
   StarterTemplate,
 } from '../types/project'
 import { buildStarterFiles } from './starters'
+import { starterToProjectType } from '../types/project'
 import { getLocalOwnerId } from './accountStore'
 
 const STORAGE_KEY = 'vexdyn-forge-projects-v1'
@@ -75,7 +76,7 @@ export const projectStore = {
       id: uid(),
       ownerId: getLocalOwnerId(),
       name,
-      type: 'html-css-js',
+      type: starterToProjectType(input.starter),
       starter: input.starter,
       status: 'saved',
       createdAt: nowIso(),
@@ -244,10 +245,20 @@ export function formatRelativeTime(iso: string): string {
 }
 
 export function starterLabel(starter: StarterTemplate): string {
-  const map: Record<StarterTemplate, string> = {
+  const map: Partial<Record<StarterTemplate, string>> = {
     blank: 'Blank',
     landing: 'Landing Page',
     portfolio: 'Portfolio',
+    'html-css-js': 'HTML / CSS / JS',
+    react: 'React',
+    'react-ts': 'React + TypeScript',
+    tailwind: 'Tailwind',
+    saas: 'SaaS',
+    dashboard: 'Dashboard',
+    business: 'Business',
+    ecommerce: 'E-commerce',
+    'ai-app': 'AI Application',
+    fullstack: 'Full-stack',
   }
-  return map[starter]
+  return map[starter] ?? starter
 }

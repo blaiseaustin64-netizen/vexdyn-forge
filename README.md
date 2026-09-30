@@ -1,36 +1,43 @@
-# VEXDYN FORGE V1
+# VEXDYN FORGE
 
-**CREATE WITHOUT LIMITS.**
+Browser-based development workspace for VEXDYN.
 
-Browser-based development environment for the VEXDYN ecosystem.  
-Build real HTML / CSS / JavaScript projects with files, a professional editor, live preview, and ZIP download.
+**VS Code × VEXDYN × modern cloud development platform**
 
-**Visual identity:** dark modern tech blue + premium silver + subtle violet (secondary).
+Part of the VEXDYN product family:
 
 | Product | Role |
-|--------|------|
-| Learn | Learn |
-| Lab | Practice |
-| **Forge** | **Create** |
-| Builder | Intelligent / visual creation (future) |
+|---------|------|
+| FORGE | Development workspace |
+| LAB | Design / visual creation (future) |
 | NYVEN | Intelligence layer (future) |
 
 ---
 
-## V1 features
+## Current capabilities (v1.1 foundation)
 
+### Preserved from V1
 - Project dashboard (create, search, sort, rename, duplicate, delete)
 - Starters: Blank, Landing Page, Portfolio
-- Desktop workspace: **Files | Code | Preview**
-- Mobile workspace: **Files · Code · Preview** (one pane at a time)
 - Nested folders; create / rename / delete files & folders
 - CodeMirror 6 editor (syntax highlighting, find/replace, completions, undo/redo)
 - Autosave with Saved / Unsaved / Saving states
-- **Run** with premium glass-wave execution transition
 - Sandboxed iframe Preview
 - Full project ZIP download
-- Profile (account center) & Settings
-- Forge dark visual system (blue / silver / secondary violet)
+- Profile & Settings
+- localStorage persistence
+
+### New in this upgrade
+- **IDE-style workspace layout**: activity bar, collapsible sidebar, editor tabs, breadcrumbs, bottom panel, status bar
+- **Expanded language support**: HTML, CSS, JS, TS, JSX, TSX, JSON, Markdown, Python, SQL (+ architecture for YAML, Bash, SVG)
+- **Additional templates**: HTML/CSS/JS structured, React, React+TS, Tailwind (available); SaaS/Dashboard/etc. slots prepared
+- **Project-wide search** panel
+- **Problems panel** with basic diagnostics
+- **Terminal / Output / Debug** panel architecture (no fake execution)
+- **Service layer**: clean boundaries for filesystem, runtime, terminal, build, deployment, AI, diagnostics
+- **Design system** updated: base `#0a0e14` → `#111823`, accent `#3B6EA5` → `#5B8DC7`, silver `#9AA5B1`
+- Keyboard shortcuts: ⌘B sidebar, ⌘J bottom panel, ⌘P search, F11 fullscreen editor
+- Integration hooks prepared for X-Ray, Deploy (Cloudflare Pages), Nyven AI, Brand-in-a-Box
 
 ---
 
@@ -41,42 +48,58 @@ npm install
 npm run dev
 ```
 
----
-
 ## Production build
 
 ```bash
 npm install
 npm run build
-npm run preview
 ```
 
 Output: `dist/`
 
 ---
 
-## Deploy to Vercel
+## Architecture
 
-1. Push to GitHub (without `node_modules` or secrets).
-2. Import in [Vercel](https://vercel.com).
-3. Framework: **Vite**
-4. Build command: `npm run build`
-5. Output directory: `dist`
+```
+src/
+  components/     UI components + editor + panels
+  hooks/          useProjects, useWorkspace
+  lib/            stores, starters, preview, download
+  pages/          Dashboard, Workspace, Profile, Settings
+  services/       Service contracts + local/stub implementations
+  styles/         tokens, global, components
+  types/          Project model
+```
 
-`vercel.json` rewrites SPA routes. **No environment variables required for V1.**
+### Service boundaries (extensible)
+- `projects` — localStorage now; cloud backend later
+- `files` — project filesystem abstraction
+- `runtime` — static preview now; React/Node/Python later
+- `terminal` — UI ready; requires secure sandbox
+- `build` / `deployment` — contracts for Cloudflare Pages
+- `ai` — Nyven project-aware actions (prepared)
+- `diagnostics` — client heuristics; language servers later
 
 ---
 
-## Persistence (honest)
+## Persistence
 
-Projects, files, profile, and settings use **browser localStorage** on this device.  
-Not cloud storage. Not VEXDYN Core authentication.
+Projects use **browser localStorage** as the primary store.  
+Cloud migration path is designed (Local → Sign in → Upload → Cloud Project) without breaking existing local projects.
 
 ---
 
-## Future (not in V1)
+## What requires a real backend / runtime
 
-VEXDYN Core · NYVEN · Live · PRO · Builder · React · Git · collaboration · terminal
+- Terminal command execution (`npm install`, `python`, etc.)
+- Full React / TypeScript / Vite bundling and HMR
+- Python / Node runtimes
+- Cloudflare Pages deployment
+- Cloud project storage, auth, collaboration
+- Nyven AI operating on the real filesystem
+
+These are architected with honest stubs — no fake functionality.
 
 ---
 
@@ -85,3 +108,4 @@ VEXDYN Core · NYVEN · Live · PRO · Builder · React · Git · collaboration 
 - Project JS runs only in a sandboxed preview iframe
 - Destructive actions require confirmation
 - No secrets or API keys in this package
+- Future runtimes must use isolated sandboxes

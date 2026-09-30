@@ -95,13 +95,13 @@ export function CreateProjectModal({
           <span className="label" id="starter-label">
             Starting point
           </span>
-          <p className="create-hint">HTML / CSS / JavaScript · V1 stack</p>
+          <p className="create-hint">Choose a foundation. More templates unlock as runtimes expand.</p>
           <div
             className="starter-grid"
             role="radiogroup"
             aria-labelledby="starter-label"
           >
-            {STARTER_OPTIONS.map((opt) => {
+            {STARTER_OPTIONS.filter((o) => o.available).map((opt) => {
               const selected = starter === opt.id
               return (
                 <button

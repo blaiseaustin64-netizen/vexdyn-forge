@@ -27,7 +27,7 @@ export function Nav({ currentView, onNavigate, onCreate }: NavProps) {
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
             <path
               d="M4 4h5.5v5.5H4V4zm6.5 0H16v5.5h-5.5V4zM4 10.5h5.5V16H4v-5.5zm6.5 0H16V16h-5.5v-5.5z"
-              fill="#3BA7FF"
+              fill="#5B8DC7"
               opacity="0.9"
             />
             <path

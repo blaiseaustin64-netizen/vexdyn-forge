@@ -1,51 +1,59 @@
-/* VEXDYN FORGE V1 — Final visual identity
-   Dominant: Tech Blue + Premium Silver
-   Secondary: Subtle Violet
+/* VEXDYN FORGE — Visual identity
+   Base: #0a0e14 → #111823
+   Accent: #3B6EA5 → #5B8DC7
+   Silver: #9AA5B1
+   Dark, technical, premium, restrained.
+   VS Code × VEXDYN × modern cloud development platform.
 */
 
 :root {
-  /* Backgrounds — dark obsidian */
-  --bg-primary: #080B0F;
-  --bg-secondary: #0F141A;
-  --bg-elevated: #151B22;
-  --bg-hover: #1A222C;
-  --bg-active: #1F2933;
+  /* Backgrounds — deep technical dark */
+  --bg-primary: #0a0e14;
+  --bg-secondary: #0f141c;
+  --bg-elevated: #111823;
+  --bg-hover: #161e2a;
+  --bg-active: #1a2330;
+  --bg-panel: #0d1219;
 
   /* Borders */
-  --border: #27313B;
-  --border-subtle: #1C242C;
-  --border-focus: #3BA7FF;
+  --border: #1e2a38;
+  --border-subtle: #16202c;
+  --border-focus: #5B8DC7;
+  --border-strong: #2a3a4d;
 
-  /* Primary Forge Blue */
-  --accent: #3BA7FF;
-  --accent-secondary: #74C7FF;
-  --accent-muted: rgba(59, 167, 255, 0.14);
-  --accent-glow: rgba(59, 167, 255, 0.28);
+  /* Primary Forge Blue (restrained) */
+  --accent: #3B6EA5;
+  --accent-hover: #4a7db4;
+  --accent-secondary: #5B8DC7;
+  --accent-muted: rgba(59, 110, 165, 0.14);
+  --accent-glow: rgba(91, 141, 199, 0.22);
+  --accent-soft: rgba(59, 110, 165, 0.08);
 
   /* Premium Silver */
-  --silver: #D8E0E8;
-  --silver-soft: #9FAAB6;
+  --silver: #9AA5B1;
+  --silver-soft: #7a8794;
+  --silver-bright: #c0c8d0;
 
   /* Secondary Violet (use sparingly) */
-  --violet: #8B7CFF;
-  --violet-muted: rgba(139, 124, 255, 0.12);
+  --violet: #6b5b9e;
+  --violet-muted: rgba(107, 91, 158, 0.12);
 
   /* Text */
-  --text-primary: #F5F7FA;
-  --text-secondary: #9FAAB6;
-  --text-muted: #737F8C;
-  --text-disabled: #4A5560;
+  --text-primary: #e8edf2;
+  --text-secondary: #9AA5B1;
+  --text-muted: #6b7682;
+  --text-disabled: #3d4754;
 
   /* Semantic */
-  --success: #35D49A;
-  --warning: #F5B942;
-  --error: #FF5D73;
-  --info: #3BA7FF;
+  --success: #3dba8c;
+  --warning: #d4a843;
+  --error: #d95a6a;
+  --info: #5B8DC7;
 
-  /* Glass */
-  --glass-bg: rgba(21, 27, 34, 0.55);
-  --glass-border: rgba(216, 224, 232, 0.12);
-  --glass-highlight: rgba(116, 199, 255, 0.08);
+  /* Glass (restrained) */
+  --glass-bg: rgba(17, 24, 35, 0.72);
+  --glass-border: rgba(154, 165, 177, 0.08);
+  --glass-highlight: rgba(91, 141, 199, 0.06);
 
   /* Typography */
   --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -64,28 +72,37 @@
   --space-16: 64px;
 
   /* Radii */
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
   --radius-full: 9999px;
 
   /* Motion */
-  --duration-fast: 150ms;
-  --duration-normal: 200ms;
-  --duration-slow: 300ms;
-  --duration-page: 350ms;
-  --duration-run: 720ms;
+  --duration-fast: 120ms;
+  --duration-normal: 180ms;
+  --duration-slow: 260ms;
+  --duration-page: 320ms;
+  --duration-run: 640ms;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
 
   /* Shadows */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.55);
-  --shadow-modal: 0 16px 48px rgba(0, 0, 0, 0.65);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
+  --shadow-modal: 0 16px 48px rgba(0, 0, 0, 0.7);
 
-  /* Layout */
-  --nav-height: 52px;
-  --sidebar-width: 240px;
+  /* Layout — IDE style */
+  --nav-height: 44px;
+  --sidebar-width: 260px;
+  --sidebar-min: 180px;
+  --sidebar-max: 420px;
+  --activity-bar-width: 48px;
+  --panel-height: 200px;
+  --panel-min: 120px;
+  --panel-max: 420px;
+  --right-panel-width: 320px;
+  --tab-height: 36px;
+  --status-bar-height: 24px;
 }
