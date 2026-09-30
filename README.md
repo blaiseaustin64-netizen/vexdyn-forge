@@ -1,42 +1,41 @@
 # VEXDYN FORGE
 
-Browser-based development workspace for VEXDYN.
+Browser IDE for VEXDYN — edit locally, deploy for real.
 
-**Stable checkpoint v1.4** — professional local editor ready for backend phase.
+## v1.6 — Real project deployment
 
----
+Static HTML/CSS/JS → VEXDYN deploy Worker → Cloudflare Pages → live `.pages.dev` URL.
 
-## v1.4 — Polish & stabilize
-
-- Project-wide Find & Replace (case, whole word, regex, path filter, next/prev)
-- Split editor: move tab to group, secondary tabs, close group
-- Prettier formatting for HTML/CSS/JS/TS/JSX/JSON/Markdown (honest failures)
-- Editor UX polish (search panel, split tabs, scrollbars)
-- Shortcut audit preserved
-
-### Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| ⌘/Ctrl+Shift+P | Command Palette |
-| ⌘/Ctrl+P | Go to File |
-| ⌘/Ctrl+G | Go to Line |
-| ⌘/Ctrl+F | Find (current file) |
-| ⌘/Ctrl+H | Replace (current file) |
-| ⌘/Ctrl+S | Save |
-| ⌘/Ctrl+B | Toggle Sidebar |
-| ⌘/Ctrl+J | Toggle Panel |
-| ⇧⌥F | Format Document |
-| Tab (HTML) | Emmet expand |
-| F11 | Fullscreen |
-
-### Develop
+### Frontend
 
 ```bash
 npm install
+cp .env.example .env   # set VITE_DEPLOY_API_URL
 npm run dev
 ```
 
-### Out of scope (later backend)
+### Deployment backend (`deploy-api/`)
 
-Terminal · React/Vite runtime · Cloudflare deploy · cloud storage · auth · LSPs · Nyven AI
+```bash
+cd deploy-api
+npx wrangler secret put CF_API_TOKEN    # Pages:Edit
+npx wrangler secret put CF_ACCOUNT_ID
+npx wrangler deploy
+```
+
+Put the Worker URL in `VITE_DEPLOY_API_URL`.
+
+**Cloudflare tokens never enter the browser.**
+
+### Supported now
+
+- Static HTML / CSS / JS projects with an HTML entry
+
+### Not yet
+
+- React / Vite build-then-deploy (architecture ready; runtime not connected)
+- Custom `*.vexdyn.app` domains
+
+### Flow
+
+CREATE → EDIT → PREVIEW → DEPLOY → VALIDATE → PACKAGE → UPLOAD → LIVE

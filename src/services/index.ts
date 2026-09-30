@@ -1,26 +1,25 @@
 /**
- * VEXDYN FORGE — Service registry
- * Local implementations now; backend-backed implementations later.
+ * Service registry — swap implementations without rewriting UI
  */
 
 import type {
   ProjectService,
+  FileSystemService,
   RuntimeService,
   TerminalService,
   BuildService,
   DeploymentService,
   AiService,
   DiagnosticsService,
-  FileSystemService,
 } from './types'
 import { localProjectService } from './localProjectService'
+import { localFileSystemService } from './localFileSystemService'
 import { localRuntimeService } from './localRuntimeService'
 import { stubTerminalService } from './stubTerminalService'
 import { stubBuildService } from './stubBuildService'
-import { stubDeploymentService } from './stubDeploymentService'
+import { cloudflareDeploymentService } from './cloudflareDeploymentService'
 import { stubAiService } from './stubAiService'
 import { localDiagnosticsService } from './localDiagnosticsService'
-import { localFileSystemService } from './localFileSystemService'
 
 export const services = {
   projects: localProjectService as ProjectService,
@@ -28,7 +27,7 @@ export const services = {
   runtime: localRuntimeService as RuntimeService,
   terminal: stubTerminalService as TerminalService,
   build: stubBuildService as BuildService,
-  deployment: stubDeploymentService as DeploymentService,
+  deployment: cloudflareDeploymentService as DeploymentService,
   ai: stubAiService as AiService,
   diagnostics: localDiagnosticsService as DiagnosticsService,
 }

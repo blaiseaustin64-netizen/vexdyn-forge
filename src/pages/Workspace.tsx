@@ -53,6 +53,7 @@ export function Workspace({ project: initial, onBack }: WorkspaceProps) {
   const [cmdMode, setCmdMode] = useState<'commands' | 'files'>('commands')
   const [gotoOpen, setGotoOpen] = useState(false)
   const [deployOpen, setDeployOpen] = useState(false)
+  const [deployRefresh, setDeployRefresh] = useState(0)
   const [showDeployments, setShowDeployments] = useState(false)
 
   // Closed tabs stack for reopen
@@ -446,6 +447,7 @@ export function Workspace({ project: initial, onBack }: WorkspaceProps) {
             projectId={ws.project.id}
             projectName={ws.project.name}
             onDeploy={() => setDeployOpen(true)}
+            refreshKey={deployRefresh}
           />
         )
       }
@@ -903,8 +905,13 @@ export function Workspace({ project: initial, onBack }: WorkspaceProps) {
       <DeployModal
         open={deployOpen}
         onClose={() => setDeployOpen(false)}
-        projectName={ws.project.name}
-        projectId={ws.project.id}
+        project={ws.project}
+        onDeployed={() => {
+          setDeployRefresh((n) => n + 1)
+          setShowDeployments(true)
+          setActivity('extensions')
+          setSidebarCollapsed(false)
+        }}
       />
 
       {/* Tab context menu */}

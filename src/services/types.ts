@@ -1,12 +1,8 @@
 /**
  * VEXDYN FORGE — Service layer contracts
- * Clean boundaries so future backend / runtime / AI can plug in
- * without rewriting the UI.
  */
 
-import type { Project, ProjectFile, ProjectStatus } from '../types/project'
-
-/* ── File System ─────────────────────────────────────────────── */
+import type { Project, ProjectFile } from '../types/project'
 
 export interface FileSystemService {
   listFiles(projectId: string): Promise<ProjectFile[]>
@@ -25,8 +21,6 @@ export interface FileSystemService {
   ): Promise<void>
 }
 
-/* ── Project Management ──────────────────────────────────────── */
-
 export interface ProjectService {
   list(): Promise<Project[]>
   get(id: string): Promise<Project | null>
@@ -35,13 +29,16 @@ export interface ProjectService {
   duplicate(id: string): Promise<Project>
   remove(id: string): Promise<void>
   save(project: Project): Promise<Project>
-  /** Prepare cloud migration path */
   uploadToCloud?(id: string): Promise<{ cloudId: string }>
 }
 
-/* ── Runtime / Preview ───────────────────────────────────────── */
-
-export type RuntimeKind = 'static' | 'javascript' | 'react' | 'typescript' | 'python' | 'node'
+export type RuntimeKind =
+  | 'static'
+  | 'javascript'
+  | 'react'
+  | 'typescript'
+  | 'python'
+  | 'node'
 
 export interface RuntimeStatus {
   kind: RuntimeKind
@@ -51,15 +48,11 @@ export interface RuntimeStatus {
 }
 
 export interface RuntimeService {
-  /** Can this project run in the current environment? */
   canRun(project: Project): { ok: boolean; reason?: string }
-  /** Start or refresh preview / runtime */
   start(project: Project): Promise<RuntimeStatus>
   stop(projectId: string): Promise<void>
   getStatus(projectId: string): RuntimeStatus
 }
-
-/* ── Terminal ────────────────────────────────────────────────── */
 
 export interface TerminalSession {
   id: string
@@ -69,16 +62,12 @@ export interface TerminalSession {
 }
 
 export interface TerminalService {
-  /** Create a session. Real execution requires backend sandbox. */
   createSession(projectId: string): Promise<TerminalSession>
   write(sessionId: string, data: string): Promise<void>
   resize(sessionId: string, cols: number, rows: number): Promise<void>
   destroy(sessionId: string): Promise<void>
-  /** Whether a real backend terminal is available */
   isAvailable(): boolean
 }
-
-/* ── Build ───────────────────────────────────────────────────── */
 
 export interface BuildResult {
   success: boolean
@@ -92,27 +81,108 @@ export interface BuildService {
   getStatus(projectId: string): 'idle' | 'building' | 'success' | 'failed'
 }
 
-/* ── Deployment ──────────────────────────────────────────────── */
+export type DeployStageId =
+  | 'preparing'
+  | 'validating'
+  | 'building'
+  | 'packaging'
+  | 'uploading'
+  | 'deploying'
+  | 'finalizing'
+
+export type DeployStatus =
+  | 'queued'
+  | 'preparing'
+  | 'validating'
+  | 'building'
+  | 'packaging'
+  | 'uploading'
+  | 'deploying'
+  | 'finalizing'
+  | 'ready'
+  | 'failed'
+  | 'cancelled'
+
+export type DeployFramework =
+  | 'static'
+  | 'react'
+  | 'react-ts'
+  | 'vite'
+  | 'unsupported'
+
+export interface DeployFilePayload {
+  path: string
+  content: string
+  encoding?: 'utf-8' | 'base64'
+}
+
+export interface DeployPackage {
+  projectId: string
+  projectName: string
+  slug: string
+  framework: DeployFramework
+  environment: 'production' | 'preview'
+  files: DeployFilePayload[]
+  entry?: string
+}
+
+export interface DeployStageInfo {
+  id: DeployStageId
+  label: string
+  status: 'pending' | 'running' | 'done' | 'failed' | 'skipped'
+  detail?: string
+  logs?: string[]
+}
 
 export interface DeploymentRecord {
   id: string
   projectId: string
-  url?: string
-  status: 'pending' | 'building' | 'deploying' | 'live' | 'failed'
+  projectName: string
+  environment: 'production' | 'preview'
+  status: DeployStatus
+  framework: DeployFramework
   provider: 'cloudflare-pages' | 'workers' | 'other'
+  url?: string
+  slug?: string
   createdAt: string
+  startedAt?: string
+  finishedAt?: string
+  stages?: DeployStageInfo[]
   logs?: string[]
+  error?: string
+  version?: number
+}
+
+export interface DeployStartRequest {
+  package: DeployPackage
+}
+
+export interface DeployStartResponse {
+  deploymentId: string
+  status: DeployStatus
+  stages?: DeployStageInfo[]
+  message?: string
+  record?: DeploymentRecord
 }
 
 export interface DeploymentService {
-  deploy(projectId: string): Promise<DeploymentRecord>
-  list(projectId: string): Promise<DeploymentRecord[]>
-  getStatus(deploymentId: string): Promise<DeploymentRecord | null>
-  /** Real Cloudflare Pages integration — not faked */
   isConfigured(): boolean
+  detectFramework(project: Project): {
+    framework: DeployFramework
+    supported: boolean
+    reason?: string
+    entry?: string
+  }
+  packageProject(
+    project: Project,
+    environment: 'production' | 'preview'
+  ): Promise<DeployPackage>
+  start(request: DeployStartRequest): Promise<DeployStartResponse>
+  getStatus(deploymentId: string): Promise<DeploymentRecord | null>
+  list(projectId: string): Promise<DeploymentRecord[]>
+  cancel?(deploymentId: string): Promise<boolean>
+  deploy?(projectId: string): Promise<DeploymentRecord>
 }
-
-/* ── AI / Nyven preparation ──────────────────────────────────── */
 
 export type AiAction =
   | 'explain'
@@ -135,28 +205,26 @@ export interface AiContext {
 
 export interface AiService {
   isAvailable(): boolean
-  request(action: AiAction, context: AiContext, prompt?: string): Promise<{
+  request(
+    action: AiAction,
+    context: AiContext,
+    prompt?: string
+  ): Promise<{
     result: string
     fileChanges?: { path: string; content: string }[]
   }>
 }
-
-/* ── X-Ray integration ───────────────────────────────────────── */
 
 export interface XRayService {
   checkSite(previewUrl: string): Promise<{ scanId: string }>
   getResults(scanId: string): Promise<unknown>
 }
 
-/* ── Storage abstraction ─────────────────────────────────────── */
-
 export interface StorageAdapter {
   getItem(key: string): string | null
   setItem(key: string, value: string): void
   removeItem(key: string): void
 }
-
-/* ── Problems / Diagnostics ──────────────────────────────────── */
 
 export type DiagnosticSeverity = 'error' | 'warning' | 'info' | 'hint'
 
