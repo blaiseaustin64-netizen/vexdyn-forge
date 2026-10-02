@@ -1,16 +1,8 @@
 /**
  * VEXDYN Forge — Deployment Backend (Cloudflare Worker)
+ * v1.6.3 — Direct Upload that actually serves files
  *
- * Secrets:
- *   CF_API_TOKEN   — Cloudflare API token with Pages:Edit
- *   CF_ACCOUNT_ID  — Cloudflare account ID
- *
- * Routes:
- *   GET  /api/health
- *   POST /api/deploy
- *   GET  /api/deploy?projectId=
- *   GET  /api/deploy/:id
- *   POST /api/deploy/:id/cancel
+ * Secrets: CF_API_TOKEN, CF_ACCOUNT_ID
  */
 
 const STAGE_ORDER = [
@@ -33,10 +25,9 @@ const STAGE_LABELS = {
   finalizing: 'Finalizing',
 }
 
-/** In-memory store (use KV/DO for multi-isolate production) */
 const deployments = new Map()
 
-function corsHeaders(request, env) {
+function corsHeaders(env) {
   const origin = env.DEPLOY_CORS_ORIGIN || '*'
   return {
     'Access-Control-Allow-Origin': origin,
@@ -45,12 +36,12 @@ function corsHeaders(request, env) {
   }
 }
 
-function json(data, status, request, env) {
+function json(data, status, env) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       'Content-Type': 'application/json',
-      ...corsHeaders(request, env),
+      ...corsHeaders(env),
     },
   })
 }
@@ -65,9 +56,7 @@ function makeStages() {
 }
 
 function setStage(record, stageId, status, detail, logLine) {
-  if (status === 'running') {
-    record.status = stageId
-  }
+  if (status === 'running') record.status = stageId
   const stage = record.stages.find((s) => s.id === stageId)
   if (stage) {
     stage.status = status
@@ -85,26 +74,8 @@ function markPreviousDone(record, upToId) {
   const idx = STAGE_ORDER.indexOf(upToId)
   for (let i = 0; i < idx; i++) {
     const s = record.stages.find((x) => x.id === STAGE_ORDER[i])
-    if (s && s.status !== 'done' && s.status !== 'failed') {
-      s.status = 'done'
-    }
+    if (s && s.status !== 'done' && s.status !== 'failed') s.status = 'done'
   }
-}
-
-async function cfFetch(env, path, init = {}) {
-  const url = `https://api.cloudflare.com/client/v4${path}`
-  const res = await fetch(url, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${env.CF_API_TOKEN}`,
-      ...(init.body instanceof FormData
-        ? {}
-        : { 'Content-Type': 'application/json' }),
-      ...(init.headers || {}),
-    },
-  })
-  const data = await res.json().catch(() => ({}))
-  return { res, data }
 }
 
 function slugify(name) {
@@ -121,56 +92,6 @@ function slugify(name) {
   return slug
 }
 
-async function ensurePagesProject(env, slug) {
-  const accountId = env.CF_ACCOUNT_ID
-  {
-    const { res, data } = await cfFetch(
-      env,
-      `/accounts/${accountId}/pages/projects/${slug}`
-    )
-    if (res.ok && data.success) {
-      return { project: data.result, created: false }
-    }
-  }
-  const { res, data } = await cfFetch(
-    env,
-    `/accounts/${accountId}/pages/projects`,
-    {
-      method: 'POST',
-      body: JSON.stringify({
-        name: slug,
-        production_branch: 'main',
-      }),
-    }
-  )
-  if (!res.ok || !data.success) {
-    const msg =
-      data?.errors?.[0]?.message ||
-      data?.messages?.[0] ||
-      `Failed to create Pages project (${res.status})`
-    if (/already exists|taken|conflict/i.test(String(msg))) {
-      const alt = `${slug}-${Math.random().toString(36).slice(2, 6)}`
-      const retry = await cfFetch(
-        env,
-        `/accounts/${accountId}/pages/projects`,
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            name: alt,
-            production_branch: 'main',
-          }),
-        }
-      )
-      if (retry.res.ok && retry.data.success) {
-        return { project: retry.data.result, created: true }
-      }
-      throw new Error(retry.data?.errors?.[0]?.message || msg)
-    }
-    throw new Error(msg)
-  }
-  return { project: data.result, created: true }
-}
-
 async function sha256Hex(content) {
   const data = new TextEncoder().encode(content ?? '')
   const digest = await crypto.subtle.digest('SHA-256', data)
@@ -179,11 +100,11 @@ async function sha256Hex(content) {
     .join('')
 }
 
-function bytesToBase64(bytes) {
+function bytesToBase64(uint8) {
   let binary = ''
   const chunk = 0x8000
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
+  for (let i = 0; i < uint8.length; i += chunk) {
+    binary += String.fromCharCode(...uint8.subarray(i, i + chunk))
   }
   return btoa(binary)
 }
@@ -192,7 +113,8 @@ function guessContentType(path) {
   const lower = path.toLowerCase()
   if (lower.endsWith('.html') || lower.endsWith('.htm')) return 'text/html; charset=utf-8'
   if (lower.endsWith('.css')) return 'text/css; charset=utf-8'
-  if (lower.endsWith('.js') || lower.endsWith('.mjs')) return 'application/javascript; charset=utf-8'
+  if (lower.endsWith('.js') || lower.endsWith('.mjs'))
+    return 'application/javascript; charset=utf-8'
   if (lower.endsWith('.json')) return 'application/json; charset=utf-8'
   if (lower.endsWith('.svg')) return 'image/svg+xml'
   if (lower.endsWith('.png')) return 'image/png'
@@ -201,67 +123,136 @@ function guessContentType(path) {
   if (lower.endsWith('.webp')) return 'image/webp'
   if (lower.endsWith('.ico')) return 'image/x-icon'
   if (lower.endsWith('.txt') || lower.endsWith('.md')) return 'text/plain; charset=utf-8'
-  if (lower.endsWith('.xml')) return 'application/xml'
-  if (lower.endsWith('.woff')) return 'font/woff'
-  if (lower.endsWith('.woff2')) return 'font/woff2'
   return 'application/octet-stream'
 }
 
+async function cfJson(env, path, init = {}) {
+  const res = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${env.CF_API_TOKEN}`,
+      ...(init.body instanceof FormData
+        ? {}
+        : { 'Content-Type': 'application/json' }),
+      ...(init.headers || {}),
+    },
+  })
+  const data = await res.json().catch(() => ({}))
+  return { res, data }
+}
+
+async function ensurePagesProject(env, slug) {
+  const accountId = env.CF_ACCOUNT_ID
+  {
+    const { res, data } = await cfJson(
+      env,
+      `/accounts/${accountId}/pages/projects/${slug}`
+    )
+    if (res.ok && data.success) return { project: data.result, created: false }
+  }
+  const { res, data } = await cfJson(env, `/accounts/${accountId}/pages/projects`, {
+    method: 'POST',
+    body: JSON.stringify({ name: slug, production_branch: 'production' }),
+  })
+  if (res.ok && data.success) return { project: data.result, created: true }
+
+  const msg = data?.errors?.[0]?.message || `Create project failed (${res.status})`
+  if (/already exists|taken|conflict/i.test(String(msg))) {
+    const alt = `${slug}-${Math.random().toString(36).slice(2, 6)}`
+    const retry = await cfJson(env, `/accounts/${accountId}/pages/projects`, {
+      method: 'POST',
+      body: JSON.stringify({ name: alt, production_branch: 'production' }),
+    })
+    if (retry.res.ok && retry.data.success) {
+      return { project: retry.data.result, created: true }
+    }
+    throw new Error(retry.data?.errors?.[0]?.message || msg)
+  }
+  throw new Error(msg)
+}
+
 /**
- * Wrangler-compatible Direct Upload:
- * 1) GET upload-token (JWT)
- * 2) POST /pages/assets/upload with hashed file bodies
- * 3) POST deployments with FormData manifest only
- *
- * Manifest keys: relative paths without leading slash
- * Manifest values: first 32 hex chars of SHA-256 (Wrangler style)
+ * Direct Upload — Wrangler-compatible:
+ * 1) upload-token
+ * 2) upload assets by content hash
+ * 3) create deployment with manifest
+ * 4) poll until CF finishes (or fails)
  */
 async function deployStaticFiles(env, projectName, files) {
   const accountId = env.CF_ACCOUNT_ID
-  const auth = { Authorization: `Bearer ${env.CF_API_TOKEN}` }
+  const authHeader = { Authorization: `Bearer ${env.CF_API_TOKEN}` }
 
-  // 1. Upload token
-  const tokenRes = await fetch(
-    `https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects/${projectName}/upload-token`,
-    { headers: auth }
-  )
-  const tokenData = await tokenRes.json().catch(() => ({}))
-  if (!tokenRes.ok || !tokenData.success) {
-    throw new Error(
-      tokenData?.errors?.[0]?.message ||
-        `Failed to get Pages upload token (${tokenRes.status})`
-    )
-  }
-  const jwt = tokenData.result?.jwt
-  if (!jwt) throw new Error('Upload token response missing jwt')
-
-  // 2. Hash files + build manifest
-  const manifest = {}
-  const payload = []
-
+  // Normalize file list
+  const normalized = []
   for (const f of files) {
-    const rel = (f.path || '').replace(/^\/+/, '')
-    if (!rel) continue
-    const content = f.content ?? ''
-    const bytes = new TextEncoder().encode(content)
-    const full = await sha256Hex(content)
-    const hash = full.slice(0, 32)
-    manifest[rel] = hash
-    payload.push({
-      key: hash,
-      value: bytesToBase64(bytes),
-      base64: true,
-      metadata: { contentType: guessContentType(rel) },
+    const path = (f.path || '').replace(/^\/+/, '').replace(/\\/g, '/')
+    if (!path) continue
+    normalized.push({
+      path,
+      content: f.content ?? '',
+      bytes: new TextEncoder().encode(f.content ?? ''),
     })
   }
+  if (!normalized.length) throw new Error('No files to deploy')
 
-  if (Object.keys(manifest).length === 0) {
-    throw new Error('No files to upload')
+  // Hashes: first 32 chars of SHA-256 (Wrangler / Pages convention)
+  const manifest = {}
+  const hashed = []
+  for (const f of normalized) {
+    const full = await sha256Hex(f.content)
+    const hash = full.slice(0, 32)
+    manifest[f.path] = hash
+    hashed.push({ ...f, hash })
   }
 
-  // Upload in batches of 50
-  for (let i = 0; i < payload.length; i += 50) {
-    const batch = payload.slice(i, i + 50)
+  // 1) JWT
+  const tokenRes = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects/${projectName}/upload-token`,
+    { headers: authHeader }
+  )
+  const tokenData = await tokenRes.json().catch(() => ({}))
+  if (!tokenRes.ok || !tokenData.success || !tokenData.result?.jwt) {
+    throw new Error(
+      tokenData?.errors?.[0]?.message ||
+        `Failed to get upload token (${tokenRes.status})`
+    )
+  }
+  const jwt = tokenData.result.jwt
+
+  // 2) Check which hashes are missing (optional but matches Wrangler)
+  let toUpload = hashed
+  try {
+    const missRes = await fetch(
+      'https://api.cloudflare.com/client/v4/pages/assets/check-missing',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${jwt}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ hashes: hashed.map((h) => h.hash) }),
+      }
+    )
+    const missData = await missRes.json().catch(() => ({}))
+    if (missRes.ok && Array.isArray(missData.result)) {
+      const missing = new Set(missData.result)
+      toUpload = hashed.filter((h) => missing.has(h.hash))
+    } else if (missRes.ok && Array.isArray(missData)) {
+      const missing = new Set(missData)
+      toUpload = hashed.filter((h) => missing.has(h.hash))
+    }
+  } catch {
+    /* upload all */
+  }
+
+  // 3) Upload missing assets
+  for (let i = 0; i < toUpload.length; i += 50) {
+    const batch = toUpload.slice(i, i + 50).map((f) => ({
+      key: f.hash,
+      value: bytesToBase64(f.bytes),
+      base64: true,
+      metadata: { contentType: guessContentType(f.path) },
+    }))
     const upRes = await fetch(
       'https://api.cloudflare.com/client/v4/pages/assets/upload',
       {
@@ -276,34 +267,97 @@ async function deployStaticFiles(env, projectName, files) {
     const upData = await upRes.json().catch(() => ({}))
     if (!upRes.ok || upData.success === false) {
       throw new Error(
-        upData?.errors?.[0]?.message ||
-          `Asset upload failed (${upRes.status})`
+        upData?.errors?.[0]?.message || `Asset upload failed (${upRes.status})`
       )
     }
   }
 
-  // 3. Create deployment — manifest is required as a form field
+  // 4) Create deployment with manifest (string field — required)
   const form = new FormData()
   form.append('manifest', JSON.stringify(manifest))
-  form.append('branch', 'main')
+  // Direct Upload production branch used at project create time
+  form.append('branch', 'production')
 
   const depRes = await fetch(
     `https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects/${projectName}/deployments`,
     {
       method: 'POST',
-      headers: auth,
+      headers: authHeader,
       body: form,
     }
   )
   const depData = await depRes.json().catch(() => ({}))
   if (!depRes.ok || !depData.success) {
-    throw new Error(
-      depData?.errors?.[0]?.message ||
-        JSON.stringify(depData?.errors || depData) ||
-        `Create deployment failed (${depRes.status})`
+    // Retry once with branch=main (older projects)
+    const form2 = new FormData()
+    form2.append('manifest', JSON.stringify(manifest))
+    form2.append('branch', 'main')
+    const retry = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects/${projectName}/deployments`,
+      {
+        method: 'POST',
+        headers: authHeader,
+        body: form2,
+      }
     )
+    const retryData = await retry.json().catch(() => ({}))
+    if (!retry.ok || !retryData.success) {
+      throw new Error(
+        depData?.errors?.[0]?.message ||
+          retryData?.errors?.[0]?.message ||
+          `Create deployment failed (${depRes.status})`
+      )
+    }
+    return await waitForDeployment(env, projectName, retryData.result)
   }
-  return depData.result
+
+  return await waitForDeployment(env, projectName, depData.result)
+}
+
+async function waitForDeployment(env, projectName, deployment) {
+  const accountId = env.CF_ACCOUNT_ID
+  const id = deployment?.id
+  if (!id) return deployment
+
+  // Poll up to ~45s for CF to finish deploying files
+  for (let i = 0; i < 15; i++) {
+    const { res, data } = await cfJson(
+      env,
+      `/accounts/${accountId}/pages/projects/${projectName}/deployments/${id}`
+    )
+    if (res.ok && data.success && data.result) {
+      const d = data.result
+      const stage = d.latest_stage
+      const status = stage?.status
+      if (status === 'success') {
+        return d
+      }
+      if (status === 'failure' || status === 'canceled') {
+        throw new Error(
+          `Cloudflare deployment ${status}${
+            d.latest_stage?.name ? ` at stage ${d.latest_stage.name}` : ''
+          }. The site may be empty — check file paths include index.html at the root.`
+        )
+      }
+    }
+    await new Promise((r) => setTimeout(r, 3000))
+  }
+  // Timed out waiting — return last known (may still become live)
+  return deployment
+}
+
+function pickLiveUrl(deployment, projectName) {
+  // Prefer stable production URL, then API url, then aliases
+  const production = `https://${projectName}.pages.dev`
+  if (deployment?.url && !String(deployment.url).includes('//preview')) {
+    // deployment.url is often https://<hash>.<project>.pages.dev
+    // production subdomain is more reliable for "Open Site"
+  }
+  const url =
+    deployment?.url ||
+    (Array.isArray(deployment?.aliases) && deployment.aliases[0]) ||
+    production
+  return { url, production }
 }
 
 async function runDeployment(env, record, pkg) {
@@ -323,22 +377,16 @@ async function runDeployment(env, record, pkg) {
     if (!pkg.files?.length) throw new Error('No files to deploy')
     if (pkg.framework !== 'static') {
       throw new Error(
-        `Framework "${pkg.framework}" is not supported yet. Deploy static HTML/CSS/JS projects only.`
+        `Framework "${pkg.framework}" is not supported yet. Use a static HTML/CSS/JS project.`
       )
     }
     const hasHtml = pkg.files.some(
       (f) => f.path === 'index.html' || f.path.endsWith('.html')
     )
-    if (!hasHtml) throw new Error('Missing HTML entry file')
+    if (!hasHtml) throw new Error('Missing HTML entry file (index.html)')
     setStage(record, 'validating', 'done', 'Static site validated', '✓ Files validated')
 
-    setStage(
-      record,
-      'building',
-      'running',
-      'Static project — no build step',
-      'Building…'
-    )
+    setStage(record, 'building', 'running', undefined, 'Building…')
     markPreviousDone(record, 'building')
     setStage(
       record,
@@ -359,14 +407,11 @@ async function runDeployment(env, record, pkg) {
     )
 
     if (!env.CF_API_TOKEN || !env.CF_ACCOUNT_ID) {
-      throw new Error(
-        'Cloudflare credentials are not configured on the server (CF_API_TOKEN, CF_ACCOUNT_ID).'
-      )
+      throw new Error('Server missing CF_API_TOKEN or CF_ACCOUNT_ID')
     }
 
     setStage(record, 'uploading', 'running', undefined, 'Creating Pages project…')
     markPreviousDone(record, 'uploading')
-
     const slug = pkg.slug || slugify(pkg.projectName)
     const { project } = await ensurePagesProject(env, slug)
     const projectName = project.name || slug
@@ -379,32 +424,36 @@ async function runDeployment(env, record, pkg) {
       `✓ Pages project ready (${projectName})`
     )
 
+    setStage(record, 'deploying', 'running', undefined, 'Uploading assets to Cloudflare…')
+    markPreviousDone(record, 'deploying')
+    const result = await deployStaticFiles(env, projectName, pkg.files)
+    const { url, production } = pickLiveUrl(result, projectName)
     setStage(
       record,
       'deploying',
-      'running',
-      undefined,
-      'Uploading files to Cloudflare…'
+      'done',
+      url,
+      `✓ Cloudflare deployment created`
     )
-    markPreviousDone(record, 'deploying')
-
-    const result = await deployStaticFiles(env, projectName, pkg.files)
-    const url =
-      result?.url ||
-      result?.aliases?.[0] ||
-      `https://${projectName}.pages.dev`
-
-    setStage(record, 'deploying', 'done', url, '✓ Cloudflare deployment created')
 
     setStage(record, 'finalizing', 'running', undefined, 'Finalizing…')
     markPreviousDone(record, 'finalizing')
-    record.url = url
+    // Prefer production URL for "Open Site"
+    record.url = production
     record.status = 'ready'
     record.finishedAt = new Date().toISOString()
-    setStage(record, 'finalizing', 'done', 'Live', `✓ Deployment ready — ${url}`)
-    record.logs = record.logs || []
+    setStage(
+      record,
+      'finalizing',
+      'done',
+      'Live',
+      `✓ Deployment ready — ${production}`
+    )
     record.logs.push('Deployment successful')
-    record.logs.push(url)
+    record.logs.push(production)
+    if (url && url !== production) {
+      record.logs.push(`Deployment alias: ${url}`)
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     record.status = 'failed'
@@ -427,16 +476,11 @@ async function runDeployment(env, record, pkg) {
 export default {
   async fetch(request, env) {
     if (request.method === 'OPTIONS') {
-      return new Response(null, {
-        status: 204,
-        headers: corsHeaders(request, env),
-      })
+      return new Response(null, { status: 204, headers: corsHeaders(env) })
     }
 
     const url = new URL(request.url)
     let path = url.pathname.replace(/\/+$/, '') || '/'
-
-    // Fix double /api/deploy when client base URL already included it
     if (path.startsWith('/api/deploy/api/')) {
       path = path.replace(/^\/api\/deploy/, '')
     }
@@ -447,15 +491,13 @@ export default {
           ok: true,
           service: 'vexdyn-forge-deploy',
           configured: Boolean(env.CF_API_TOKEN && env.CF_ACCOUNT_ID),
-          version: '1.6.2-jwt-upload',
+          version: '1.6.3-serve-files',
         },
         200,
-        request,
         env
       )
     }
 
-    // List deployments
     if (path === '/api/deploy' && request.method === 'GET') {
       const projectId = url.searchParams.get('projectId')
       const all = Array.from(deployments.values())
@@ -463,19 +505,17 @@ export default {
         ? all.filter((d) => d.projectId === projectId)
         : all
       list.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-      return json(list, 200, request, env)
+      return json(list, 200, env)
     }
 
-    // Start deployment
     if (path === '/api/deploy' && request.method === 'POST') {
       if (!env.CF_API_TOKEN || !env.CF_ACCOUNT_ID) {
         return json(
           {
             error:
-              'Cloudflare credentials are not configured on the deployment backend. Set CF_API_TOKEN and CF_ACCOUNT_ID as Worker secrets.',
+              'Cloudflare credentials are not configured. Set CF_API_TOKEN and CF_ACCOUNT_ID secrets.',
           },
           503,
-          request,
           env
         )
       }
@@ -484,7 +524,7 @@ export default {
       try {
         body = await request.json()
       } catch {
-        return json({ error: 'Invalid JSON body' }, 400, request, env)
+        return json({ error: 'Invalid JSON body' }, 400, env)
       }
 
       const pkg = body.package
@@ -492,7 +532,6 @@ export default {
         return json(
           { error: 'Missing package.projectId or package.files' },
           400,
-          request,
           env
         )
       }
@@ -514,12 +553,8 @@ export default {
         version: Date.now(),
       }
       deployments.set(id, record)
-
       await runDeployment(env, record, pkg)
-
       const final = deployments.get(id)
-      // Always return JSON the client can parse; HTTP 200 with status field
-      // so the UI can show stages even on failure.
       return json(
         {
           deploymentId: id,
@@ -532,62 +567,37 @@ export default {
           record: final,
         },
         200,
-        request,
         env
       )
     }
 
-    // Get one deployment
     const statusMatch = path.match(/^\/api\/deploy\/([^/]+)$/)
     if (statusMatch && request.method === 'GET') {
       const id = decodeURIComponent(statusMatch[1])
       const record = deployments.get(id)
-      if (!record) {
-        return json({ error: 'Deployment not found' }, 404, request, env)
-      }
-      return json(record, 200, request, env)
+      if (!record) return json({ error: 'Deployment not found' }, 404, env)
+      return json(record, 200, env)
     }
 
-    // Cancel
     const cancelMatch = path.match(/^\/api\/deploy\/([^/]+)\/cancel$/)
     if (cancelMatch && request.method === 'POST') {
       const id = decodeURIComponent(cancelMatch[1])
       const record = deployments.get(id)
-      if (!record) {
-        return json({ error: 'Deployment not found' }, 404, request, env)
-      }
+      if (!record) return json({ error: 'Deployment not found' }, 404, env)
       if (record.status === 'ready' || record.status === 'failed') {
         return json(
           { error: 'Deployment already finished', cancelled: false },
           400,
-          request,
           env
         )
       }
       record.status = 'cancelled'
       record.finishedAt = new Date().toISOString()
-      record.logs = record.logs || []
       record.logs.push('Deployment cancelled')
       deployments.set(id, record)
-      return json({ cancelled: true, record }, 200, request, env)
+      return json({ cancelled: true, record }, 200, env)
     }
 
-    if (path === '/api/deploy' || path === '/deploy') {
-      return json(
-        {
-          error: `Method ${request.method} not allowed on ${path}. Use POST to start a deployment, GET to list.`,
-        },
-        405,
-        request,
-        env
-      )
-    }
-
-    return json(
-      { error: 'Not found', path, method: request.method },
-      404,
-      request,
-      env
-    )
+    return json({ error: 'Not found', path, method: request.method }, 404, env)
   },
 }
