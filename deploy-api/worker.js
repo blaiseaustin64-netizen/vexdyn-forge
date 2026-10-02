@@ -219,7 +219,7 @@ async function deployStaticFiles(env, projectName, files) {
   const hashed = []
   for (const f of normalized) {
     const hash = pagesContentHash(f.content, f.path)
-    manifest[f.path] = hash
+    manifest['/' + f.path] = hash // Pages manifest keys MUST start with "/"
     hashed.push({ ...f, hash })
   }
 
@@ -267,6 +267,15 @@ async function deployStaticFiles(env, projectName, files) {
       )
     }
   }
+
+  // 3b) Register hashes (Wrangler does this too)
+  try {
+    await fetch('https://api.cloudflare.com/client/v4/pages/assets/upsert-hashes', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hashes: hashed.map((f) => f.hash) }),
+    })
+  } catch {}
 
   // 4) Create deployment with manifest (string field — required)
   const form = new FormData()
@@ -342,15 +351,16 @@ async function waitForDeployment(env, projectName, deployment) {
   return deployment
 }
 
-function pickLiveUrl(deployment, projectName) {
-  const production = `https://${projectName}.pages.dev`
+function pickLiveUrl(deployment, projectName, subdomain) {
+  const host = subdomain || `${projectName}.pages.dev`
+  const production = `https://${host}`
   const deploymentUrl =
     deployment?.url ||
     (Array.isArray(deployment?.aliases) && deployment.aliases[0]) ||
     null
   // Prefer the deployment-specific URL from Cloudflare (always tied to this deploy).
   // Fall back to production subdomain.
-  const url = deploymentUrl || production
+  const url = production // clean link; deployment-specific URL kept as alias
   return { url, production, deploymentUrl }
 }
 
@@ -421,7 +431,7 @@ async function runDeployment(env, record, pkg) {
     setStage(record, 'deploying', 'running', undefined, 'Uploading assets to Cloudflare…')
     markPreviousDone(record, 'deploying')
     const result = await deployStaticFiles(env, projectName, pkg.files)
-    const { url, production, deploymentUrl } = pickLiveUrl(result, projectName)
+    const { url, production, deploymentUrl } = pickLiveUrl(result, projectName, project.subdomain)
     setStage(
       record,
       'deploying',
