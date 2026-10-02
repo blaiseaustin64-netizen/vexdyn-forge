@@ -219,33 +219,11 @@ async function deployStaticFiles(env, projectName, files) {
   }
   const jwt = tokenData.result.jwt
 
-  // 2) Check which hashes are missing (optional but matches Wrangler)
-  let toUpload = hashed
-  try {
-    const missRes = await fetch(
-      'https://api.cloudflare.com/client/v4/pages/assets/check-missing',
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${jwt}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ hashes: hashed.map((h) => h.hash) }),
-      }
-    )
-    const missData = await missRes.json().catch(() => ({}))
-    if (missRes.ok && Array.isArray(missData.result)) {
-      const missing = new Set(missData.result)
-      toUpload = hashed.filter((h) => missing.has(h.hash))
-    } else if (missRes.ok && Array.isArray(missData)) {
-      const missing = new Set(missData)
-      toUpload = hashed.filter((h) => missing.has(h.hash))
-    }
-  } catch {
-    /* upload all */
-  }
+  // Always upload all assets (do not skip via check-missing).
+  // Skipping when check-missing returns [] caused empty 404 sites.
+  const toUpload = hashed
 
-  // 3) Upload missing assets
+  // 3) Upload assets
   for (let i = 0; i < toUpload.length; i += 50) {
     const batch = toUpload.slice(i, i + 50).map((f) => ({
       key: f.hash,
@@ -347,17 +325,15 @@ async function waitForDeployment(env, projectName, deployment) {
 }
 
 function pickLiveUrl(deployment, projectName) {
-  // Prefer stable production URL, then API url, then aliases
   const production = `https://${projectName}.pages.dev`
-  if (deployment?.url && !String(deployment.url).includes('//preview')) {
-    // deployment.url is often https://<hash>.<project>.pages.dev
-    // production subdomain is more reliable for "Open Site"
-  }
-  const url =
+  const deploymentUrl =
     deployment?.url ||
     (Array.isArray(deployment?.aliases) && deployment.aliases[0]) ||
-    production
-  return { url, production }
+    null
+  // Prefer the deployment-specific URL from Cloudflare (always tied to this deploy).
+  // Fall back to production subdomain.
+  const url = deploymentUrl || production
+  return { url, production, deploymentUrl }
 }
 
 async function runDeployment(env, record, pkg) {
@@ -427,7 +403,7 @@ async function runDeployment(env, record, pkg) {
     setStage(record, 'deploying', 'running', undefined, 'Uploading assets to Cloudflare…')
     markPreviousDone(record, 'deploying')
     const result = await deployStaticFiles(env, projectName, pkg.files)
-    const { url, production } = pickLiveUrl(result, projectName)
+    const { url, production, deploymentUrl } = pickLiveUrl(result, projectName)
     setStage(
       record,
       'deploying',
@@ -438,8 +414,9 @@ async function runDeployment(env, record, pkg) {
 
     setStage(record, 'finalizing', 'running', undefined, 'Finalizing…')
     markPreviousDone(record, 'finalizing')
-    // Prefer production URL for "Open Site"
-    record.url = production
+    // Use deployment URL first — production subdomain can 522 if an older
+    // broken project occupies the same base name.
+    record.url = url
     record.status = 'ready'
     record.finishedAt = new Date().toISOString()
     setStage(
@@ -447,12 +424,15 @@ async function runDeployment(env, record, pkg) {
       'finalizing',
       'done',
       'Live',
-      `✓ Deployment ready — ${production}`
+      `✓ Deployment ready — ${url}`
     )
     record.logs.push('Deployment successful')
-    record.logs.push(production)
-    if (url && url !== production) {
-      record.logs.push(`Deployment alias: ${url}`)
+    record.logs.push(url)
+    if (production && production !== url) {
+      record.logs.push(`Production host: ${production}`)
+    }
+    if (deploymentUrl && deploymentUrl !== url) {
+      record.logs.push(`Deployment alias: ${deploymentUrl}`)
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -491,7 +471,7 @@ export default {
           ok: true,
           service: 'vexdyn-forge-deploy',
           configured: Boolean(env.CF_API_TOKEN && env.CF_ACCOUNT_ID),
-          version: '1.6.3-serve-files',
+          version: '1.6.4-always-upload',
         },
         200,
         env
