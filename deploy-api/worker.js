@@ -1,9 +1,12 @@
 /**
  * VEXDYN Forge — Deployment Backend (Cloudflare Worker)
- * v1.6.3 — Direct Upload that actually serves files
+ * v1.6.5 — BLAKE3 content hash (matches Wrangler Pages)
  *
  * Secrets: CF_API_TOKEN, CF_ACCOUNT_ID
  */
+
+import { blake3 } from './vendor/noble/blake3.js';
+
 
 const STAGE_ORDER = [
   'preparing',
@@ -92,14 +95,6 @@ function slugify(name) {
   return slug
 }
 
-async function sha256Hex(content) {
-  const data = new TextEncoder().encode(content ?? '')
-  const digest = await crypto.subtle.digest('SHA-256', data)
-  return [...new Uint8Array(digest)]
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
-}
-
 function bytesToBase64(uint8) {
   let binary = ''
   const chunk = 0x8000
@@ -107,6 +102,30 @@ function bytesToBase64(uint8) {
     binary += String.fromCharCode(...uint8.subarray(i, i + chunk))
   }
   return btoa(binary)
+}
+
+/**
+ * Cloudflare Pages / Wrangler content hash:
+ *   blake3( base64(fileBytes) + extensionWithoutDot ).hex().slice(0, 32)
+ * (NOT plain SHA-256 — wrong hashes produce empty 404 sites)
+ */
+function pagesContentHash(content, path) {
+  const bytes =
+    typeof content === 'string'
+      ? new TextEncoder().encode(content ?? '')
+      : content instanceof Uint8Array
+        ? content
+        : new TextEncoder().encode(String(content ?? ''))
+  const base64Contents = bytesToBase64(bytes)
+  const base = String(path || '').split('/').pop() || ''
+  const dot = base.lastIndexOf('.')
+  const extension = dot > 0 ? base.slice(dot + 1) : ''
+  const input = new TextEncoder().encode(base64Contents + extension)
+  const digest = blake3(input) // Uint8Array
+  return [...digest]
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+    .slice(0, 32)
 }
 
 function guessContentType(path) {
@@ -199,8 +218,7 @@ async function deployStaticFiles(env, projectName, files) {
   const manifest = {}
   const hashed = []
   for (const f of normalized) {
-    const full = await sha256Hex(f.content)
-    const hash = full.slice(0, 32)
+    const hash = pagesContentHash(f.content, f.path)
     manifest[f.path] = hash
     hashed.push({ ...f, hash })
   }
@@ -471,7 +489,7 @@ export default {
           ok: true,
           service: 'vexdyn-forge-deploy',
           configured: Boolean(env.CF_API_TOKEN && env.CF_ACCOUNT_ID),
-          version: '1.6.4-always-upload',
+          version: '1.6.5-blake3-hash',
         },
         200,
         env

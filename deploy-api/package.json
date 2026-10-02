@@ -1,0 +1,9 @@
+{
+  "name": "vexdyn-forge-deploy",
+  "private": true,
+  "version": "1.6.5",
+  "type": "module",
+  "dependencies": {
+    "@noble/hashes": "^1.5.0"
+  }
+}
