@@ -1,15 +1,14 @@
 /**
  * Browser-side project import: files, folders, ZIP.
+ * ZIP via native DecompressionStream (no npm dependency).
  * Does not execute project code or install packages.
  */
 
-import { unzipSync, strFromU8 } from 'fflate'
 import type { ProjectFile, ProjectType, FileKind } from '../types/project'
 
 export interface ImportedPath {
   path: string
   content: string
-  /** true if binary was skipped or base64-encoded */
   binary?: boolean
 }
 
@@ -76,7 +75,6 @@ function extOf(path: string): string {
 function isProbablyText(path: string, bytes: Uint8Array): boolean {
   const ext = extOf(path)
   if (TEXT_EXT.has(ext)) return true
-  // Heuristic: no null bytes in first 800 bytes
   const n = Math.min(bytes.length, 800)
   for (let i = 0; i < n; i++) {
     if (bytes[i] === 0) return false
@@ -84,7 +82,11 @@ function isProbablyText(path: string, bytes: Uint8Array): boolean {
   return bytes.length < 256_000
 }
 
-/** Strip a single common root folder (e.g. repo-name/) when all files share it */
+function bytesToUtf8(bytes: Uint8Array): string {
+  return new TextDecoder('utf-8', { fatal: false }).decode(bytes)
+}
+
+/** Strip a single common root folder when all files share it */
 export function stripCommonRoot(paths: string[]): { paths: string[]; root: string | null } {
   if (paths.length === 0) return { paths, root: null }
   const parts = paths.map((p) => p.split('/'))
@@ -108,7 +110,9 @@ export function detectProject(files: ImportedPath[]): ProjectDetection {
   let projectType: ProjectType = 'html-css-js'
 
   let pkg: Record<string, unknown> | null = null
-  const pkgFile = files.find((f) => f.path === 'package.json' || f.path.endsWith('/package.json'))
+  const pkgFile = files.find(
+    (f) => f.path === 'package.json' || f.path.endsWith('/package.json')
+  )
   if (pkgFile) {
     hasPackageJson = true
     labels.push('Node / npm')
@@ -133,7 +137,12 @@ export function detectProject(files: ImportedPath[]): ProjectDetection {
   if (deps['next'] || names.has('next.config.js') || names.has('next.config.mjs')) {
     labels.push('Next.js')
     projectType = 'next'
-  } else if (deps['vite'] || names.has('vite.config.js') || names.has('vite.config.ts') || names.has('vite.config.mjs')) {
+  } else if (
+    deps['vite'] ||
+    names.has('vite.config.js') ||
+    names.has('vite.config.ts') ||
+    names.has('vite.config.mjs')
+  ) {
     labels.push('Vite')
     projectType = 'vite'
   }
@@ -142,20 +151,16 @@ export function detectProject(files: ImportedPath[]): ProjectDetection {
     labels.push('React')
     if (deps['typescript'] || names.has('tsconfig.json')) {
       labels.push('TypeScript')
-      projectType = projectType === 'html-css-js' ? 'react-ts' : projectType
-      if (projectType === 'vite') { /* keep vite */ }
-      else if (!labels.includes('Next.js')) projectType = 'react-ts'
-    } else {
-      if (!labels.includes('Next.js') && projectType === 'html-css-js') projectType = 'react'
+      if (projectType === 'html-css-js') projectType = 'react-ts'
+      else if (projectType !== 'vite' && projectType !== 'next') projectType = 'react-ts'
+    } else if (projectType === 'html-css-js') {
+      projectType = 'react'
     }
   } else if (deps['typescript'] || names.has('tsconfig.json')) {
     labels.push('TypeScript')
   }
 
-  if (
-    deps['tailwindcss'] ||
-    files.some((f) => /tailwind\.config/i.test(f.path))
-  ) {
+  if (deps['tailwindcss'] || files.some((f) => /tailwind\.config/i.test(f.path))) {
     labels.push('Tailwind')
     if (projectType === 'html-css-js') projectType = 'tailwind'
   }
@@ -167,7 +172,7 @@ export function detectProject(files: ImportedPath[]): ProjectDetection {
   }
 
   if (names.has('index.html') || files.some((f) => f.path.endsWith('.html'))) {
-    if (!labels.includes('HTML')) labels.push('HTML/CSS/JS')
+    if (!labels.includes('HTML/CSS/JS')) labels.push('HTML/CSS/JS')
     entryHints.push('index.html')
   }
 
@@ -176,14 +181,11 @@ export function detectProject(files: ImportedPath[]): ProjectDetection {
     else if (scripts.start) entryHints.push('npm start')
   }
 
-  // Unique labels
   const uniq = Array.from(new Set(labels))
   if (uniq.length === 0) uniq.push('Static files')
 
   const summary =
-    uniq.length === 1
-      ? `Detected: ${uniq[0]}`
-      : `Detected: ${uniq.join(' · ')}`
+    uniq.length === 1 ? `Detected: ${uniq[0]}` : `Detected: ${uniq.join(' · ')}`
 
   return {
     projectType,
@@ -196,7 +198,7 @@ export function detectProject(files: ImportedPath[]): ProjectDetection {
 
 /** Build nested ProjectFile[] (files + folders) from flat path list */
 export function pathsToProjectFiles(imported: ImportedPath[]): ProjectFile[] {
-  const folderIds = new Map<string, string>() // path -> id
+  const folderIds = new Map<string, string>()
   const result: ProjectFile[] = []
   const ts = nowIso()
 
@@ -222,12 +224,13 @@ export function pathsToProjectFiles(imported: ImportedPath[]): ProjectFile[] {
     return id
   }
 
-  // Sort so folders are created in order
   const sorted = [...imported].sort((a, b) => a.path.localeCompare(b.path))
   for (const item of sorted) {
     const path = normalizePath(item.path)
     if (!path || shouldSkip(path)) continue
-    const parentPath = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
+    const parentPath = path.includes('/')
+      ? path.slice(0, path.lastIndexOf('/'))
+      : ''
     const parentId = parentPath ? ensureFolder(parentPath) : null
     const name = path.split('/').pop() || path
     result.push({
@@ -245,34 +248,64 @@ export function pathsToProjectFiles(imported: ImportedPath[]): ProjectFile[] {
   return result
 }
 
-export async function readFileList(fileList: FileList | File[]): Promise<ImportedPath[]> {
-  const files = Array.from(fileList)
+async function inflateRaw(data: Uint8Array): Promise<Uint8Array> {
+  if (typeof DecompressionStream === 'undefined') {
+    throw new Error(
+      'This browser cannot decompress ZIP files. Try uploading individual files instead.'
+    )
+  }
+  const stream = new Blob([data]).stream().pipeThrough(
+    new DecompressionStream('deflate-raw')
+  )
+  const buf = await new Response(stream).arrayBuffer()
+  return new Uint8Array(buf)
+}
+
+/**
+ * Minimal ZIP reader (local file headers).
+ * Supports store (0) and deflate (8) via DecompressionStream.
+ */
+export async function unpackZipBytes(data: Uint8Array): Promise<ImportedPath[]> {
   const out: ImportedPath[] = []
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
+  let offset = 0
 
-  for (const file of files) {
-    // webkitRelativePath for folder picks; name for single files
-    const rel =
-      (file as File & { webkitRelativePath?: string }).webkitRelativePath ||
-      file.name
-    const path = normalizePath(rel)
-    if (!path || shouldSkip(path)) continue
+  while (offset + 30 <= data.length) {
+    const sig = view.getUint32(offset, true)
+    if (sig === 0x02014b50 || sig === 0x06054b50) break // central dir / EOCD
+    if (sig !== 0x04034b50) break
 
-    if (path.toLowerCase().endsWith('.zip')) {
-      const buf = new Uint8Array(await file.arrayBuffer())
-      const fromZip = unpackZipBytes(buf)
-      out.push(...fromZip)
+    const method = view.getUint16(offset + 8, true)
+    const compSize = view.getUint32(offset + 18, true)
+    const nameLen = view.getUint16(offset + 26, true)
+    const extraLen = view.getUint16(offset + 28, true)
+    const nameStart = offset + 30
+    const nameBytes = data.subarray(nameStart, nameStart + nameLen)
+    const path = normalizePath(bytesToUtf8(nameBytes))
+    const dataStart = nameStart + nameLen + extraLen
+    const comp = data.subarray(dataStart, dataStart + compSize)
+    offset = dataStart + compSize
+
+    if (!path || path.endsWith('/')) continue
+    if (shouldSkip(path)) continue
+
+    let raw: Uint8Array
+    if (method === 0) {
+      raw = comp
+    } else if (method === 8) {
+      try {
+        raw = await inflateRaw(comp)
+      } catch {
+        continue
+      }
+    } else {
       continue
     }
 
-    const buf = new Uint8Array(await file.arrayBuffer())
-    if (!isProbablyText(path, buf)) {
-      // Skip large/binary assets for editor import (keep structure optional)
-      continue
-    }
-    out.push({ path, content: strFromU8(buf) })
+    if (!isProbablyText(path, raw)) continue
+    out.push({ path, content: bytesToUtf8(raw) })
   }
 
-  // If folder upload wrapped in a root dir, strip it
   const rawPaths = out.map((o) => o.path)
   const { paths: stripped, root } = stripCommonRoot(rawPaths)
   if (root) {
@@ -281,16 +314,31 @@ export async function readFileList(fileList: FileList | File[]): Promise<Importe
   return out
 }
 
-export function unpackZipBytes(data: Uint8Array): ImportedPath[] {
-  const unzipped = unzipSync(data)
+export async function readFileList(
+  fileList: FileList | File[]
+): Promise<ImportedPath[]> {
+  const files = Array.from(fileList)
   const out: ImportedPath[] = []
-  for (const [rawPath, bytes] of Object.entries(unzipped)) {
-    const path = normalizePath(rawPath)
-    if (!path || path.endsWith('/')) continue
-    if (shouldSkip(path)) continue
-    if (!isProbablyText(path, bytes)) continue
-    out.push({ path, content: strFromU8(bytes) })
+
+  for (const file of files) {
+    const rel =
+      (file as File & { webkitRelativePath?: string }).webkitRelativePath ||
+      file.name
+    const path = normalizePath(rel)
+    if (!path || shouldSkip(path)) continue
+
+    if (path.toLowerCase().endsWith('.zip') || file.type === 'application/zip') {
+      const buf = new Uint8Array(await file.arrayBuffer())
+      const fromZip = await unpackZipBytes(buf)
+      out.push(...fromZip)
+      continue
+    }
+
+    const buf = new Uint8Array(await file.arrayBuffer())
+    if (!isProbablyText(path, buf)) continue
+    out.push({ path, content: bytesToUtf8(buf) })
   }
+
   const rawPaths = out.map((o) => o.path)
   const { paths: stripped, root } = stripCommonRoot(rawPaths)
   if (root) {

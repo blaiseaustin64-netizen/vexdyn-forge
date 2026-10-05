@@ -31,8 +31,7 @@
     "@codemirror/lint": "^6.8.4",
     "lucide-react": "^0.468.0",
     "@emmetio/abbreviation": "^2.3.3",
-    "prettier": "^3.4.2",
-    "fflate": "^0.8.2"
+    "prettier": "^3.4.2"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",
