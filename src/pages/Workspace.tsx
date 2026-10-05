@@ -460,7 +460,7 @@ export function Workspace({ project: initial, onBack }: WorkspaceProps) {
                 <Icon name="deploy" size={14} />
                 <span>
                   <strong>Deployments</strong>
-                  <span className="tools-desc">Cloudflare Pages — backend pending</span>
+                  <span className="tools-desc">Deploy, monitor and manage your live projects.</span>
                 </span>
               </button>
             </li>

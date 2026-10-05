@@ -7,6 +7,7 @@ import type {
   Project,
   CreateProjectInput,
   ProjectFile,
+  ProjectType,
   StarterTemplate,
 } from '../types/project'
 import { buildStarterFiles } from './starters'
@@ -89,6 +90,32 @@ export const projectStore = {
     return project
   },
 
+
+  /**
+   * Create a project from imported files (upload / zip / folder).
+   */
+  createFromImport(name: string, files: ProjectFile[], projectType: ProjectType = 'other'): Project {
+    const trimmed = name.trim()
+    if (!trimmed) throw new Error('Project name is required')
+    if (!files.length) throw new Error('No files to import')
+
+    const projects = loadAll()
+    const project: Project = {
+      id: uid(),
+      ownerId: getLocalOwnerId(),
+      name: trimmed,
+      type: projectType,
+      starter: 'blank' as StarterTemplate,
+      status: 'saved',
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+      files,
+      settings: { imported: true },
+    }
+    projects.unshift(project)
+    saveAll(projects)
+    return project
+  },
   rename(id: string, newName: string): Project {
     const name = newName.trim()
     if (!name) throw new Error('Project name is required')

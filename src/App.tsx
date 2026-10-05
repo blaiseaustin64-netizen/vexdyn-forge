@@ -6,10 +6,12 @@ import { Workspace } from './pages/Workspace'
 import { Profile } from './pages/Profile'
 import { Settings } from './pages/Settings'
 import { CreateProjectModal } from './components/CreateProjectModal'
+import { ImportProjectModal } from './components/ImportProjectModal'
 import { RenameProjectModal } from './components/RenameProjectModal'
 import { DeleteProjectModal } from './components/DeleteProjectModal'
 import { useProjects } from './hooks/useProjects'
 import { projectStore } from './lib/projectStore'
+import type { ProjectDetection } from './lib/importProject'
 import { loadSettings } from './lib/settingsStore'
 import type { Project } from './types/project'
 import type { StarterTemplate } from './types/project'
@@ -47,6 +49,8 @@ export default function App() {
 
   const [createOpen, setCreateOpen] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
 
   const [renameTarget, setRenameTarget] = useState<Project | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null)
@@ -59,6 +63,36 @@ export default function App() {
   }, [])
 
   const openCreate = useCallback(() => setCreateOpen(true), [])
+  const openImport = useCallback(() => setImportOpen(true), [])
+
+  const handleImport = useCallback(
+    (
+      name: string,
+      files: import('./types/project').ProjectFile[],
+      detection: ProjectDetection
+    ) => {
+      setIsImporting(true)
+      window.setTimeout(() => {
+        try {
+          const project = projectStore.createFromImport(
+            name,
+            files,
+            detection.projectType
+          )
+          refresh()
+          setImportOpen(false)
+          setIsImporting(false)
+          setActiveProject(project)
+          setView('workspace')
+        } catch (e) {
+          setIsImporting(false)
+          console.error(e)
+          window.alert(e instanceof Error ? e.message : 'Import failed')
+        }
+      }, 120)
+    },
+    [refresh]
+  )
 
   const handleCreate = useCallback(
     (name: string, starter: StarterTemplate) => {
@@ -158,7 +192,7 @@ export default function App() {
         ) : showEntry ? (
           <EntryExperience
             onCreate={openCreate}
-            onImport={() => openCreate()}
+            onImport={openImport}
           />
         ) : inWorkspace ? (
           <Workspace
@@ -177,6 +211,7 @@ export default function App() {
             sort={sort}
             onSortChange={setSort}
             onCreate={openCreate}
+            onImport={openImport}
             onOpen={handleOpen}
             onRename={setRenameTarget}
             onDuplicate={handleDuplicate}
@@ -191,6 +226,12 @@ export default function App() {
         onClose={() => !isCreating && setCreateOpen(false)}
         onCreate={handleCreate}
         isCreating={isCreating}
+      />
+      <ImportProjectModal
+        open={importOpen}
+        onClose={() => !isImporting && setImportOpen(false)}
+        onImport={handleImport}
+        isImporting={isImporting}
       />
 
       <RenameProjectModal

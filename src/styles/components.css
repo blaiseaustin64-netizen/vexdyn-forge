@@ -4995,3 +4995,138 @@ button .forge-icon {
     animation: none;
   }
 }
+
+/* ── Project import ────────────────────────────────────── */
+
+.import-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.import-lead {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+.import-drop {
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.import-drop--over {
+  border-color: var(--accent-secondary);
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+.import-drop-title {
+  margin: 10px 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.import-drop-sub {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.import-actions-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+@media (min-width: 480px) {
+  .import-actions-grid {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+}
+.import-status {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.import-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--error);
+}
+.import-field { margin-bottom: 4px; }
+.import-detect {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 12px 14px;
+  background: var(--bg-elevated);
+}
+.import-detect-summary {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.import-detect-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.import-tag {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: var(--accent-muted);
+  color: var(--accent-secondary);
+}
+.import-detect-meta {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.import-file-list {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.import-file-list summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.import-file-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+  max-height: 160px;
+  overflow: auto;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+.import-file-list li {
+  padding: 2px 0;
+  font-size: 11px;
+  color: var(--silver);
+}
+
+.dashboard-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

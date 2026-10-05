@@ -12,6 +12,7 @@ interface DashboardProps {
   sort: SortMode
   onSortChange: (s: SortMode) => void
   onCreate: () => void
+  onImport?: () => void
   onOpen: (project: Project) => void
   onRename: (project: Project) => void
   onDuplicate: (project: Project) => void
@@ -26,6 +27,7 @@ export function Dashboard({
   sort,
   onSortChange,
   onCreate,
+  onImport,
   onOpen,
   onRename,
   onDuplicate,
@@ -46,9 +48,16 @@ export function Dashboard({
               Build something real. Turn ideas into working projects.
             </p>
           </div>
-          <Button variant="primary" onClick={onCreate} className="dashboard-create-btn">
-            + Create project
-          </Button>
+          <div className="dashboard-header-actions">
+            {onImport && (
+              <Button variant="secondary" onClick={onImport}>
+                Import
+              </Button>
+            )}
+            <Button variant="primary" onClick={onCreate} className="dashboard-create-btn">
+              + Create project
+            </Button>
+          </div>
         </div>
 
         {hasProjects && (
