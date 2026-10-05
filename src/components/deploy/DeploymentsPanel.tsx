@@ -1,13 +1,14 @@
 /**
- * Deployments panel — real records from deployment service
+ * Deployments panel — production card, filterable history, opens detail
  */
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { Icon } from '../ui/Icon'
 import { Button } from '../Button'
 import { StatusIndicator } from '../ui/StatusIndicator'
 import { services } from '../../services'
 import type { DeploymentRecord } from '../../services/types'
+import { DeploymentDetail } from './DeploymentDetail'
 
 interface DeploymentsPanelProps {
   projectId: string
@@ -15,6 +16,8 @@ interface DeploymentsPanelProps {
   onDeploy: () => void
   refreshKey?: number
 }
+
+type Filter = 'all' | 'production' | 'preview' | 'failed'
 
 function formatWhen(iso?: string): string {
   if (!iso) return ''
@@ -26,6 +29,16 @@ function formatWhen(iso?: string): string {
   return d.toLocaleDateString()
 }
 
+function formatDuration(ms?: number, started?: string, finished?: string): string {
+  let value = ms
+  if (value == null && started && finished) {
+    value = new Date(finished).getTime() - new Date(started).getTime()
+  }
+  if (value == null || value < 0) return ''
+  if (value < 1000) return `${value}ms`
+  return `${(value / 1000).toFixed(1)}s`
+}
+
 function statusKind(
   s: DeploymentRecord['status']
 ): 'ready' | 'failed' | 'building' | 'deploying' | 'idle' {
@@ -33,6 +46,15 @@ function statusKind(
   if (s === 'failed' || s === 'cancelled') return 'failed'
   if (s === 'queued') return 'idle'
   return 'deploying'
+}
+
+function isRunning(s: DeploymentRecord['status']): boolean {
+  return (
+    s !== 'ready' &&
+    s !== 'failed' &&
+    s !== 'cancelled' &&
+    s !== 'queued'
+  )
 }
 
 export function DeploymentsPanel({
@@ -43,6 +65,7 @@ export function DeploymentsPanel({
 }: DeploymentsPanelProps) {
   const [items, setItems] = useState<DeploymentRecord[]>([])
   const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState<Filter>('all')
   const [selected, setSelected] = useState<DeploymentRecord | null>(null)
   const configured = services.deployment.isConfigured()
 
@@ -63,6 +86,16 @@ export function DeploymentsPanel({
   const production = items.find(
     (d) => d.environment === 'production' && d.status === 'ready'
   )
+
+  const filtered = useMemo(() => {
+    return items.filter((d) => {
+      if (filter === 'production') return d.environment === 'production'
+      if (filter === 'preview') return d.environment === 'preview'
+      if (filter === 'failed')
+        return d.status === 'failed' || d.status === 'cancelled'
+      return true
+    })
+  }, [items, filter])
 
   return (
     <div className="deployments-panel">
@@ -134,76 +167,104 @@ export function DeploymentsPanel({
       </section>
 
       <section className="deploy-history">
-        <h4 className="deploy-section-title">History</h4>
+        <div className="deploy-history-head">
+          <h4 className="deploy-section-title">History</h4>
+          <div className="deploy-filter" role="group" aria-label="Filter deployments">
+            {([
+              ['all', 'All'],
+              ['production', 'Prod'],
+              ['preview', 'Preview'],
+              ['failed', 'Failed'],
+            ] as const).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                className={filter === id ? 'active' : ''}
+                aria-pressed={filter === id}
+                onClick={() => setFilter(id)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {loading ? (
           <p className="panel-empty">Loading…</p>
-        ) : items.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <div className="deploy-empty-state">
             <Icon name="history" size={24} />
-            <p>No deployments yet</p>
+            <p>{items.length === 0 ? 'No deployments yet' : 'No matches'}</p>
             <p className="panel-hint">
-              {configured
-                ? 'Deploy a static HTML/CSS/JS project to see history here.'
-                : 'Configure the deployment backend (deploy-api Worker + VITE_DEPLOY_API_URL) to enable real Cloudflare Pages deploys.'}
+              {items.length === 0
+                ? configured
+                  ? 'Deploy a static project to see history here.'
+                  : 'Configure the deployment backend to enable real deploys.'
+                : 'Try another filter.'}
             </p>
           </div>
         ) : (
           <ul className="deploy-history-list">
-            {items.map((d) => (
-              <li key={d.id}>
-                <button
-                  type="button"
-                  className="deploy-history-row"
-                  onClick={() => setSelected(d)}
-                >
-                  <StatusIndicator status={statusKind(d.status)} size="sm" />
-                  <span className="deploy-hist-env">{d.environment}</span>
-                  <span className="deploy-hist-time">
-                    {formatWhen(d.finishedAt || d.createdAt)}
-                  </span>
-                  {d.url && (
-                    <span className="deploy-hist-url muted">
-                      {d.url.replace(/^https?:\/\//, '')}
+            {filtered.map((d) => {
+              const running = isRunning(d.status)
+              return (
+                <li key={d.id}>
+                  <button
+                    type="button"
+                    className="deploy-hist-row"
+                    onClick={() => setSelected(d)}
+                    aria-label={`Deployment ${d.id.slice(0, 8)}, ${d.status}, ${d.environment}`}
+                  >
+                    <span
+                      className={`deploy-hist-dot ${
+                        d.status === 'ready'
+                          ? 'ok'
+                          : d.status === 'failed' || d.status === 'cancelled'
+                            ? 'err'
+                            : running
+                              ? 'run'
+                              : 'idle'
+                      }`}
+                      aria-hidden
+                    />
+                    <span className="deploy-hist-env">{d.environment}</span>
+                    <span className="deploy-hist-id mono">{d.id.slice(0, 8)}</span>
+                    <span className="deploy-hist-dur mono">
+                      {formatDuration(
+                        d.durationMs,
+                        d.startedAt,
+                        d.finishedAt
+                      )}
                     </span>
-                  )}
-                </button>
-              </li>
-            ))}
+                    <span className="deploy-hist-when">
+                      {formatWhen(d.finishedAt || d.createdAt)}
+                    </span>
+                    {d.url && (
+                      <span className="deploy-hist-url muted">
+                        {d.url.replace(/^https?:\/\//, '')}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              )
+            })}
           </ul>
         )}
       </section>
 
       {selected && (
-        <div className="deploy-log-drawer">
-          <div className="deploy-log-drawer-head">
-            <strong>Deployment logs</strong>
-            <button
-              type="button"
-              className="panel-icon-btn"
-              onClick={() => setSelected(null)}
-              aria-label="Close logs"
-            >
-              <Icon name="close" size={14} />
-            </button>
-          </div>
-          <pre className="deploy-log-pre">
-            {(selected.logs && selected.logs.length
-              ? selected.logs
-              : selected.stages?.flatMap((s) => s.logs || []) || [
-                  selected.error || selected.status,
-                ]
-            ).join('\n')}
-          </pre>
-          {selected.url && selected.status === 'ready' && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => window.open(selected.url, '_blank', 'noopener')}
-            >
-              Open Site
-            </Button>
-          )}
-        </div>
+        <DeploymentDetail
+          record={selected}
+          onClose={() => setSelected(null)}
+          onRedeploy={() => {
+            setSelected(null)
+            onDeploy()
+          }}
+          onDeleted={(id) => {
+            setItems((prev) => prev.filter((r) => r.id !== id))
+            setSelected(null)
+          }}
+        />
       )}
     </div>
   )

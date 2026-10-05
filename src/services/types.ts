@@ -132,6 +132,10 @@ export interface DeployStageInfo {
   status: 'pending' | 'running' | 'done' | 'failed' | 'skipped'
   detail?: string
   logs?: string[]
+  /** Optional timing (streamed deploys) */
+  startedAt?: string
+  finishedAt?: string
+  durationMs?: number
 }
 
 export interface DeploymentRecord {
@@ -151,6 +155,12 @@ export interface DeploymentRecord {
   logs?: string[]
   error?: string
   version?: number
+  /** Optional: which stage failed */
+  failedStage?: DeployStageId
+  /** Optional: human recovery hint */
+  hint?: string
+  /** Optional: total duration */
+  durationMs?: number
 }
 
 export interface DeployStartRequest {
@@ -165,6 +175,33 @@ export interface DeployStartResponse {
   record?: DeploymentRecord
 }
 
+/** NDJSON stream events from POST /api/deploy (Accept: application/x-ndjson) */
+export type DeployStreamEvent =
+  | {
+      type: 'stage'
+      id: DeployStageId
+      status: DeployStageInfo['status']
+      detail?: string
+      ts: number
+    }
+  | {
+      type: 'log'
+      stage: DeployStageId
+      line: string
+      ts: number
+    }
+  | {
+      type: 'error'
+      stage?: DeployStageId
+      message: string
+      hint?: string
+      ts?: number
+    }
+  | {
+      type: 'done'
+      record: DeploymentRecord
+    }
+
 export interface DeploymentService {
   isConfigured(): boolean
   detectFramework(project: Project): {
@@ -178,6 +215,14 @@ export interface DeploymentService {
     environment: 'production' | 'preview'
   ): Promise<DeployPackage>
   start(request: DeployStartRequest): Promise<DeployStartResponse>
+  /**
+   * Stream live stage/log events (NDJSON). Falls back to legacy JSON start()
+   * if the Worker does not return a stream.
+   */
+  startStream?(
+    request: DeployStartRequest,
+    onEvent: (event: DeployStreamEvent) => void
+  ): Promise<DeploymentRecord>
   getStatus(deploymentId: string): Promise<DeploymentRecord | null>
   list(projectId: string): Promise<DeploymentRecord[]>
   cancel?(deploymentId: string): Promise<boolean>
@@ -209,38 +254,5 @@ export interface AiService {
     action: AiAction,
     context: AiContext,
     prompt?: string
-  ): Promise<{
-    result: string
-    fileChanges?: { path: string; content: string }[]
-  }>
-}
-
-export interface XRayService {
-  checkSite(previewUrl: string): Promise<{ scanId: string }>
-  getResults(scanId: string): Promise<unknown>
-}
-
-export interface StorageAdapter {
-  getItem(key: string): string | null
-  setItem(key: string, value: string): void
-  removeItem(key: string): void
-}
-
-export type DiagnosticSeverity = 'error' | 'warning' | 'info' | 'hint'
-
-export interface Diagnostic {
-  id: string
-  fileId: string
-  path: string
-  message: string
-  severity: DiagnosticSeverity
-  line?: number
-  column?: number
-  source?: string
-}
-
-export interface DiagnosticsService {
-  getForProject(projectId: string): Diagnostic[]
-  getForFile(projectId: string, fileId: string): Diagnostic[]
-  clear(projectId: string): void
+  ): Promise<{ text: string; patches?: { path: string; content: string }[] }>
 }

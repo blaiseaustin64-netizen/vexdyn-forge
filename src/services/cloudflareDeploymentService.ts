@@ -9,6 +9,7 @@ import type {
   DeploymentRecord,
   DeployStartRequest,
   DeployStartResponse,
+  DeployStreamEvent,
 } from './types'
 import {
   detectFramework as detect,
@@ -85,6 +86,58 @@ function upsertRecord(record: DeploymentRecord): void {
   const all = loadHistory().filter((r) => r.id !== record.id)
   all.unshift(record)
   saveHistory(all)
+}
+
+/**
+ * Read NDJSON lines from a fetch body and invoke onEvent for each parsed object.
+ */
+async function readNdjsonStream(
+  body: ReadableStream<Uint8Array>,
+  onEvent: (event: DeployStreamEvent) => void
+): Promise<DeploymentRecord | null> {
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let finalRecord: DeploymentRecord | null = null
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+
+    let nl: number
+    while ((nl = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, nl).trim()
+      buffer = buffer.slice(nl + 1)
+      if (!line) continue
+      try {
+        const event = JSON.parse(line) as DeployStreamEvent
+        if (event.type === 'done' && event.record) {
+          finalRecord = event.record
+        }
+        onEvent(event)
+        if (import.meta.env.DEV && event.type === 'stage') {
+          console.debug('[Forge Deploy stream]', event.id, event.status, event.detail)
+        }
+      } catch {
+        console.warn('[Forge Deploy] bad NDJSON line', line.slice(0, 120))
+      }
+    }
+  }
+
+  // trailing line without newline
+  const tail = buffer.trim()
+  if (tail) {
+    try {
+      const event = JSON.parse(tail) as DeployStreamEvent
+      if (event.type === 'done' && event.record) finalRecord = event.record
+      onEvent(event)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return finalRecord
 }
 
 export const cloudflareDeploymentService: DeploymentService = {
@@ -166,6 +219,103 @@ export const cloudflareDeploymentService: DeploymentService = {
     }
   },
 
+  /**
+   * Live stage streaming. Requests NDJSON; falls back to legacy JSON if needed.
+   */
+  async startStream(
+    request: DeployStartRequest,
+    onEvent: (event: DeployStreamEvent) => void
+  ): Promise<DeploymentRecord> {
+    const base = apiBase()
+    if (!base) {
+      throw new Error(
+        'Deployment backend is not configured. Set VITE_DEPLOY_API_URL to your Worker origin.'
+      )
+    }
+
+    const url = endpoint('/api/deploy')
+    let res: Response
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/x-ndjson',
+        },
+        body: JSON.stringify(request),
+      })
+    } catch (e) {
+      throw new Error(
+        `Could not reach deployment API at ${url}. ${
+          e instanceof Error ? e.message : String(e)
+        }`
+      )
+    }
+
+    const ct = (res.headers.get('content-type') || '').toLowerCase()
+    const isNdjson =
+      ct.includes('application/x-ndjson') || ct.includes('ndjson')
+
+    if (isNdjson && res.body) {
+      const record = await readNdjsonStream(res.body, onEvent)
+      if (record) {
+        upsertRecord(record)
+        return record
+      }
+      // Stream ended without done — try status poll is caller's job
+      throw new Error(
+        res.ok
+          ? 'Deployment stream ended without a final record'
+          : `Deploy stream failed (${res.status})`
+      )
+    }
+
+    // Legacy JSON fallback
+    const data = (await res.json().catch(() => ({}))) as DeployStartResponse & {
+      error?: string
+      record?: DeploymentRecord
+    }
+
+    if (data.record?.stages) {
+      for (const stage of data.record.stages) {
+        onEvent({
+          type: 'stage',
+          id: stage.id,
+          status: stage.status,
+          detail: stage.detail,
+          ts: Date.now(),
+        })
+        for (const line of stage.logs || []) {
+          onEvent({ type: 'log', stage: stage.id, line, ts: Date.now() })
+        }
+      }
+    }
+
+    if (data.record) {
+      if (data.record.status === 'failed' && data.record.error) {
+        onEvent({
+          type: 'error',
+          stage: data.record.failedStage,
+          message: data.record.error,
+          hint: data.record.hint,
+          ts: Date.now(),
+        })
+      }
+      onEvent({ type: 'done', record: data.record })
+      upsertRecord(data.record)
+      return data.record
+    }
+
+    if (!res.ok) {
+      const message =
+        data.error || data.message || `Deploy failed (${res.status})`
+      onEvent({ type: 'error', message, ts: Date.now() })
+      throw new Error(message)
+    }
+
+    throw new Error(data.message || 'Deployment returned no record')
+  },
+
   async getStatus(deploymentId: string): Promise<DeploymentRecord | null> {
     const base = apiBase()
     if (!base) {
@@ -173,7 +323,9 @@ export const cloudflareDeploymentService: DeploymentService = {
     }
 
     try {
-      const res = await fetch(endpoint(`/api/deploy/${encodeURIComponent(deploymentId)}`))
+      const res = await fetch(
+        endpoint(`/api/deploy/${encodeURIComponent(deploymentId)}`)
+      )
       if (!res.ok) {
         return loadHistory().find((r) => r.id === deploymentId) ?? null
       }
