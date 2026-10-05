@@ -22,6 +22,13 @@ import type {
   DeployStreamEvent,
 } from '../../services/types'
 import { slugifyProjectName } from '../../lib/deployPackage'
+import {
+  detectProject,
+  pathsToProjectFiles,
+  readZipFile,
+  readDataTransfer,
+} from '../../lib/importProject'
+import { projectStore } from '../../lib/projectStore'
 
 export interface DeployPageProps {
   open: boolean
@@ -598,6 +605,132 @@ export function DeployPage({ open, onClose, project, onDeployed }: DeployPagePro
                   <p>{detection.reason}</p>
                 </div>
               )}
+
+              <section className="dp-section">
+                <span className="dp-label">Or deploy a ZIP</span>
+                <div
+                  className="import-drop"
+                  style={{ padding: '16px' }}
+                  onDragOver={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    void (async () => {
+                      try {
+                        const imported = await readDataTransfer(e.dataTransfer)
+                        if (!imported.length) return
+                        const det = detectProject(imported)
+                        if (det.projectType !== 'html-css-js' && det.projectType !== 'tailwind' && det.projectType !== 'other') {
+                          // still allow if has html
+                          const hasHtml = imported.some((f) => f.path.endsWith('.html'))
+                          if (!hasHtml) {
+                            setError('ZIP must contain a static HTML entry (index.html) for deployment.')
+                            setPhase('failed')
+                            return
+                          }
+                        }
+                        const files = pathsToProjectFiles(imported)
+                        const name = project.name + ' (ZIP)'
+                        const proj = projectStore.createFromImport(name, files, det.projectType)
+                        // Replace in-memory package path by navigating is heavy —
+                        // instead package and deploy these files directly via a temp project shape
+                        const temp = { ...proj }
+                        setError(null)
+                        setBusy(true)
+                        setPhase('running')
+                        startTs.current = Date.now()
+                        setElapsed(0)
+                        timerRef.current = window.setInterval(() => {
+                          setElapsed(Date.now() - startTs.current)
+                        }, 250)
+                        const pkg = await services.deployment.packageProject(temp, env)
+                        if (typeof services.deployment.startStream === 'function') {
+                          const final = await services.deployment.startStream(
+                            { package: pkg },
+                            handleStreamEvent
+                          )
+                          deploymentIdRef.current = final.id
+                        } else {
+                          const started = await services.deployment.start({ package: pkg })
+                          if (started.record) handleStreamEvent({ type: 'done', record: started.record })
+                        }
+                      } catch (err) {
+                        setPhase('failed')
+                        setError(err instanceof Error ? err.message : String(err))
+                        setBusy(false)
+                        finishTimer()
+                      }
+                    })()
+                  }}
+                >
+                  <p className="import-drop-title" style={{ fontSize: 13 }}>Drop a project ZIP here</p>
+                  <p className="import-drop-sub">Static HTML/CSS/JS with assets supported</p>
+                  <div style={{ marginTop: 10 }}>
+                    <Button
+                      variant="secondary"
+                      type="button"
+                      onClick={() => {
+                        const input = document.createElement('input')
+                        input.type = 'file'
+                        input.accept = '.zip,application/zip'
+                        input.onchange = () => {
+                          const f = input.files?.[0]
+                          if (!f) return
+                          void (async () => {
+                            try {
+                              const imported = await readZipFile(f)
+                              if (!imported.length) {
+                                setError('ZIP contained no deployable files')
+                                setPhase('failed')
+                                return
+                              }
+                              const det = detectProject(imported)
+                              const files = pathsToProjectFiles(imported)
+                              const proj = projectStore.createFromImport(
+                                project.name + ' (ZIP)',
+                                files,
+                                det.projectType
+                              )
+                              setBusy(true)
+                              setPhase('running')
+                              setStages(emptyStages())
+                              setLogs([])
+                              startTs.current = Date.now()
+                              setElapsed(0)
+                              timerRef.current = window.setInterval(() => {
+                                setElapsed(Date.now() - startTs.current)
+                              }, 250)
+                              const pkg = await services.deployment.packageProject(proj, env)
+                              if (typeof services.deployment.startStream === 'function') {
+                                const final = await services.deployment.startStream(
+                                  { package: pkg },
+                                  handleStreamEvent
+                                )
+                                deploymentIdRef.current = final.id
+                              } else {
+                                const started = await services.deployment.start({ package: pkg })
+                                if (started.record)
+                                  handleStreamEvent({ type: 'done', record: started.record })
+                              }
+                            } catch (err) {
+                              setPhase('failed')
+                              setError(err instanceof Error ? err.message : String(err))
+                              setBusy(false)
+                              finishTimer()
+                            }
+                          })()
+                        }
+                        input.click()
+                      }}
+                    >
+                      Upload ZIP
+                    </Button>
+                  </div>
+                </div>
+              </section>
 
               <div className="dp-actions">
                 <Button variant="ghost" onClick={onClose}>

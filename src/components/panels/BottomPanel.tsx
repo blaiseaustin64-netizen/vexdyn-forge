@@ -13,6 +13,7 @@ interface BottomPanelProps {
   onChange: (tab: BottomTab) => void
   diagnostics: Diagnostic[]
   outputLines: string[]
+  debugLines?: string[]
   collapsed: boolean
   onToggleCollapse: () => void
   onGoToDiagnostic?: (d: Diagnostic) => void
@@ -23,6 +24,7 @@ export function BottomPanel({
   onChange,
   diagnostics,
   outputLines,
+  debugLines = [],
   collapsed,
   onToggleCollapse,
   onGoToDiagnostic,
@@ -168,9 +170,13 @@ export function BottomPanel({
 
         {active === 'debug' && (
           <div className="debug-pane">
-            <p className="panel-empty">
-              Debug console — runtime messages and preview errors appear here.
-            </p>
+            {debugLines.length === 0 ? (
+              <p className="panel-empty">
+                Preview console.log / warn / error appear here when the preview runs.
+              </p>
+            ) : (
+              <pre className="output-log">{debugLines.join('\n')}</pre>
+            )}
           </div>
         )}
       </div>

@@ -295,10 +295,18 @@ async function deployStaticFiles(env, projectName, files) {
     const f = files[i]
     const path = (f.path || '').replace(/^\/+/, '').replace(/\\/g, '/')
     if (!path) continue
+    let bytes
+    if (f.encoding === 'base64') {
+      const bin = atob(f.content || '')
+      bytes = new Uint8Array(bin.length)
+      for (let j = 0; j < bin.length; j++) bytes[j] = bin.charCodeAt(j)
+    } else {
+      bytes = new TextEncoder().encode(f.content ?? '')
+    }
     normalized.push({
       path: path,
       content: f.content ?? '',
-      bytes: new TextEncoder().encode(f.content ?? ''),
+      bytes: bytes,
     })
   }
   if (!normalized.length) throw new Error('No files to deploy')
@@ -307,7 +315,8 @@ async function deployStaticFiles(env, projectName, files) {
   const hashed = []
   for (let i = 0; i < normalized.length; i++) {
     const f = normalized[i]
-    const hash = pagesContentHash(f.content, f.path)
+    // Hash raw file bytes (not the base64 text) so binary assets deploy correctly
+    const hash = pagesContentHash(f.bytes, f.path)
     manifest['/' + f.path] = hash
     hashed.push({ path: f.path, content: f.content, bytes: f.bytes, hash: hash })
   }

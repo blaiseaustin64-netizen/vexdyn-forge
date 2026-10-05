@@ -1,15 +1,17 @@
 /**
- * Browser-side project import: files, folders, ZIP.
+ * Shared browser-side project import: files, folders, ZIP.
+ * Used by Import Project modal and Deploy ZIP flow.
  * ZIP via native DecompressionStream (no npm dependency).
- * Does not execute project code or install packages.
  */
 
 import type { ProjectFile, ProjectType, FileKind } from '../types/project'
+import { isBinaryAsset, isTextFile, mimeFromFilename } from '../types/project'
 
 export interface ImportedPath {
   path: string
   content: string
-  binary?: boolean
+  encoding?: 'utf-8' | 'base64'
+  mimeType?: string
 }
 
 export interface ProjectDetection {
@@ -35,14 +37,7 @@ const SKIP_NAMES = new Set([
   '.gitkeep',
 ])
 
-const TEXT_EXT = new Set([
-  'html', 'htm', 'css', 'js', 'mjs', 'cjs', 'jsx', 'ts', 'tsx',
-  'json', 'md', 'markdown', 'txt', 'svg', 'xml', 'yml', 'yaml',
-  'py', 'sql', 'sh', 'bash', 'env', 'gitignore', 'npmrc', 'prettierrc',
-  'eslintrc', 'editorconfig', 'toml', 'ini', 'cfg', 'conf', 'map',
-  'vue', 'svelte', 'astro', 'liquid', 'hbs', 'ejs', 'pug',
-  'csv', 'tsv', 'lock', 'log', 'rst', 'tex',
-])
+const MAX_BINARY_BYTES = 1_500_000
 
 function uid(): string {
   return crypto.randomUUID()
@@ -65,29 +60,23 @@ function shouldSkip(path: string): boolean {
   return false
 }
 
-function extOf(path: string): string {
-  const base = path.split('/').pop() || ''
-  const i = base.lastIndexOf('.')
-  if (i <= 0) return ''
-  return base.slice(i + 1).toLowerCase()
-}
-
-function isProbablyText(path: string, bytes: Uint8Array): boolean {
-  const ext = extOf(path)
-  if (TEXT_EXT.has(ext)) return true
-  const n = Math.min(bytes.length, 800)
-  for (let i = 0; i < n; i++) {
-    if (bytes[i] === 0) return false
-  }
-  return bytes.length < 256_000
-}
-
 function bytesToUtf8(bytes: Uint8Array): string {
   return new TextDecoder('utf-8', { fatal: false }).decode(bytes)
 }
 
-/** Strip a single common root folder when all files share it */
-export function stripCommonRoot(paths: string[]): { paths: string[]; root: string | null } {
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = ''
+  const chunk = 0x8000
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
+  }
+  return btoa(binary)
+}
+
+export function stripCommonRoot(paths: string[]): {
+  paths: string[]
+  root: string | null
+} {
   if (paths.length === 0) return { paths, root: null }
   const parts = paths.map((p) => p.split('/'))
   if (parts.every((p) => p.length === 1)) return { paths, root: null }
@@ -102,6 +91,13 @@ export function stripCommonRoot(paths: string[]): { paths: string[]; root: strin
   return { paths, root: null }
 }
 
+function applyStripRoot(items: ImportedPath[]): ImportedPath[] {
+  const rawPaths = items.map((o) => o.path)
+  const { paths: stripped, root } = stripCommonRoot(rawPaths)
+  if (!root) return items
+  return items.map((o, i) => ({ ...o, path: stripped[i] }))
+}
+
 export function detectProject(files: ImportedPath[]): ProjectDetection {
   const names = new Set(files.map((f) => f.path.toLowerCase()))
   const labels: string[] = []
@@ -113,7 +109,7 @@ export function detectProject(files: ImportedPath[]): ProjectDetection {
   const pkgFile = files.find(
     (f) => f.path === 'package.json' || f.path.endsWith('/package.json')
   )
-  if (pkgFile) {
+  if (pkgFile && pkgFile.encoding !== 'base64') {
     hasPackageJson = true
     labels.push('Node / npm')
     try {
@@ -131,7 +127,6 @@ export function detectProject(files: ImportedPath[]): ProjectDetection {
       ? (pkg.devDependencies as Record<string, string>)
       : {}),
   }
-
   const scripts = (pkg?.scripts as Record<string, string>) || {}
 
   if (deps['next'] || names.has('next.config.js') || names.has('next.config.mjs')) {
@@ -152,7 +147,6 @@ export function detectProject(files: ImportedPath[]): ProjectDetection {
     if (deps['typescript'] || names.has('tsconfig.json')) {
       labels.push('TypeScript')
       if (projectType === 'html-css-js') projectType = 'react-ts'
-      else if (projectType !== 'vite' && projectType !== 'next') projectType = 'react-ts'
     } else if (projectType === 'html-css-js') {
       projectType = 'react'
     }
@@ -165,8 +159,11 @@ export function detectProject(files: ImportedPath[]): ProjectDetection {
     if (projectType === 'html-css-js') projectType = 'tailwind'
   }
 
-  const hasPy = files.some((f) => f.path.endsWith('.py'))
-  if (hasPy || names.has('requirements.txt') || names.has('pyproject.toml')) {
+  if (
+    files.some((f) => f.path.endsWith('.py')) ||
+    names.has('requirements.txt') ||
+    names.has('pyproject.toml')
+  ) {
     labels.push('Python')
     if (projectType === 'html-css-js') projectType = 'python'
   }
@@ -176,6 +173,9 @@ export function detectProject(files: ImportedPath[]): ProjectDetection {
     entryHints.push('index.html')
   }
 
+  const assetCount = files.filter((f) => f.encoding === 'base64').length
+  if (assetCount > 0) labels.push(`${assetCount} asset${assetCount === 1 ? '' : 's'}`)
+
   if (hasPackageJson && entryHints.length === 0) {
     if (scripts.dev) entryHints.push('npm run dev')
     else if (scripts.start) entryHints.push('npm start')
@@ -184,19 +184,16 @@ export function detectProject(files: ImportedPath[]): ProjectDetection {
   const uniq = Array.from(new Set(labels))
   if (uniq.length === 0) uniq.push('Static files')
 
-  const summary =
-    uniq.length === 1 ? `Detected: ${uniq[0]}` : `Detected: ${uniq.join(' · ')}`
-
   return {
     projectType,
     labels: uniq,
-    summary,
+    summary:
+      uniq.length === 1 ? `Detected: ${uniq[0]}` : `Detected: ${uniq.join(' · ')}`,
     hasPackageJson,
     entryHints,
   }
 }
 
-/** Build nested ProjectFile[] (files + folders) from flat path list */
 export function pathsToProjectFiles(imported: ImportedPath[]): ProjectFile[] {
   const folderIds = new Map<string, string>()
   const result: ProjectFile[] = []
@@ -239,12 +236,13 @@ export function pathsToProjectFiles(imported: ImportedPath[]): ProjectFile[] {
       path,
       kind: 'file',
       content: item.content,
+      encoding: item.encoding || 'utf-8',
+      mimeType: item.mimeType,
       parentId,
       createdAt: ts,
       updatedAt: ts,
     })
   }
-
   return result
 }
 
@@ -261,10 +259,30 @@ async function inflateRaw(data: Uint8Array): Promise<Uint8Array> {
   return new Uint8Array(buf)
 }
 
-/**
- * Minimal ZIP reader (local file headers).
- * Supports store (0) and deflate (8) via DecompressionStream.
- */
+function fileFromBytes(path: string, raw: Uint8Array): ImportedPath | null {
+  if (!path || path.endsWith('/') || shouldSkip(path)) return null
+  const name = path.split('/').pop() || path
+  if (isBinaryAsset(name)) {
+    if (raw.length > MAX_BINARY_BYTES) return null
+    return {
+      path,
+      content: bytesToBase64(raw),
+      encoding: 'base64',
+      mimeType: mimeFromFilename(name),
+    }
+  }
+  // Prefer text for known text types; skip opaque binaries
+  if (!isTextFile(name)) {
+    // allow unknown small text-like
+    const n = Math.min(raw.length, 400)
+    for (let i = 0; i < n; i++) {
+      if (raw[i] === 0) return null
+    }
+    if (raw.length > 200_000) return null
+  }
+  return { path, content: bytesToUtf8(raw), encoding: 'utf-8' }
+}
+
 export async function unpackZipBytes(data: Uint8Array): Promise<ImportedPath[]> {
   const out: ImportedPath[] = []
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
@@ -272,7 +290,7 @@ export async function unpackZipBytes(data: Uint8Array): Promise<ImportedPath[]> 
 
   while (offset + 30 <= data.length) {
     const sig = view.getUint32(offset, true)
-    if (sig === 0x02014b50 || sig === 0x06054b50) break // central dir / EOCD
+    if (sig === 0x02014b50 || sig === 0x06054b50) break
     if (sig !== 0x04034b50) break
 
     const method = view.getUint16(offset + 8, true)
@@ -286,34 +304,33 @@ export async function unpackZipBytes(data: Uint8Array): Promise<ImportedPath[]> 
     const comp = data.subarray(dataStart, dataStart + compSize)
     offset = dataStart + compSize
 
-    if (!path || path.endsWith('/')) continue
-    if (shouldSkip(path)) continue
-
     let raw: Uint8Array
-    if (method === 0) {
-      raw = comp
-    } else if (method === 8) {
+    if (method === 0) raw = comp
+    else if (method === 8) {
       try {
         raw = await inflateRaw(comp)
       } catch {
         continue
       }
-    } else {
-      continue
-    }
+    } else continue
 
-    if (!isProbablyText(path, raw)) continue
-    out.push({ path, content: bytesToUtf8(raw) })
+    const item = fileFromBytes(path, raw)
+    if (item) out.push(item)
   }
-
-  const rawPaths = out.map((o) => o.path)
-  const { paths: stripped, root } = stripCommonRoot(rawPaths)
-  if (root) {
-    return out.map((o, i) => ({ ...o, path: stripped[i] }))
-  }
-  return out
+  return applyStripRoot(out)
 }
 
+async function readOneFile(file: File, relPath: string): Promise<ImportedPath | null> {
+  const path = normalizePath(relPath)
+  if (!path || shouldSkip(path)) return null
+  if (path.toLowerCase().endsWith('.zip')) {
+    return null // handled by caller
+  }
+  const buf = new Uint8Array(await file.arrayBuffer())
+  return fileFromBytes(path, buf)
+}
+
+/** Read FileList from input or drop (files + optional zip members). */
 export async function readFileList(
   fileList: FileList | File[]
 ): Promise<ImportedPath[]> {
@@ -325,26 +342,94 @@ export async function readFileList(
       (file as File & { webkitRelativePath?: string }).webkitRelativePath ||
       file.name
     const path = normalizePath(rel)
-    if (!path || shouldSkip(path)) continue
 
-    if (path.toLowerCase().endsWith('.zip') || file.type === 'application/zip') {
+    if (
+      path.toLowerCase().endsWith('.zip') ||
+      file.type === 'application/zip' ||
+      file.type === 'application/x-zip-compressed'
+    ) {
       const buf = new Uint8Array(await file.arrayBuffer())
-      const fromZip = await unpackZipBytes(buf)
-      out.push(...fromZip)
+      out.push(...(await unpackZipBytes(buf)))
       continue
     }
 
-    const buf = new Uint8Array(await file.arrayBuffer())
-    if (!isProbablyText(path, buf)) continue
-    out.push({ path, content: bytesToUtf8(buf) })
+    const item = await readOneFile(file, path)
+    if (item) out.push(item)
   }
 
-  const rawPaths = out.map((o) => o.path)
-  const { paths: stripped, root } = stripCommonRoot(rawPaths)
-  if (root) {
-    return out.map((o, i) => ({ ...o, path: stripped[i] }))
+  return applyStripRoot(out)
+}
+
+/** DirectoryEntry recursive reader for drag-and-drop folders */
+async function readEntry(
+  entry: FileSystemEntry,
+  base = ''
+): Promise<ImportedPath[]> {
+  if (entry.isFile) {
+    const fileEntry = entry as FileSystemFileEntry
+    const file: File = await new Promise((resolve, reject) =>
+      fileEntry.file(resolve, reject)
+    )
+    const path = normalizePath(base ? `${base}/${entry.name}` : entry.name)
+    if (path.toLowerCase().endsWith('.zip')) {
+      const buf = new Uint8Array(await file.arrayBuffer())
+      return unpackZipBytes(buf)
+    }
+    const item = await readOneFile(file, path)
+    return item ? [item] : []
   }
-  return out
+
+  if (entry.isDirectory) {
+    const dir = entry as FileSystemDirectoryEntry
+    const reader = dir.createReader()
+    const entries: FileSystemEntry[] = []
+    // readEntries may return partial batches
+    for (;;) {
+      const batch: FileSystemEntry[] = await new Promise((resolve, reject) =>
+        reader.readEntries(resolve, reject)
+      )
+      if (!batch.length) break
+      entries.push(...batch)
+    }
+    const nested: ImportedPath[] = []
+    const nextBase = base ? `${base}/${entry.name}` : entry.name
+    for (const child of entries) {
+      nested.push(...(await readEntry(child, nextBase)))
+    }
+    return nested
+  }
+  return []
+}
+
+/**
+ * Preferred entry for drag-and-drop (supports folders via webkitGetAsEntry).
+ */
+export async function readDataTransfer(
+  dt: DataTransfer
+): Promise<ImportedPath[]> {
+  const items = dt.items
+  if (items && items.length) {
+    const entries: FileSystemEntry[] = []
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      if (item.kind !== 'file') continue
+      const entry =
+        typeof item.webkitGetAsEntry === 'function'
+          ? item.webkitGetAsEntry()
+          : null
+      if (entry) entries.push(entry)
+    }
+    if (entries.length) {
+      const out: ImportedPath[] = []
+      for (const entry of entries) {
+        out.push(...(await readEntry(entry)))
+      }
+      return applyStripRoot(out)
+    }
+  }
+  // Fallback: files only
+  if (dt.files?.length) return readFileList(dt.files)
+  return []
 }
 
 export async function readZipFile(file: File): Promise<ImportedPath[]> {

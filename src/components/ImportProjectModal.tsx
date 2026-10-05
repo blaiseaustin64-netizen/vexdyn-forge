@@ -12,6 +12,7 @@ import {
   detectProject,
   pathsToProjectFiles,
   readFileList,
+  readDataTransfer,
   type ImportedPath,
   type ProjectDetection,
 } from '../lib/importProject'
@@ -97,9 +98,39 @@ export function ImportProjectModal({
 
   const onDrop = async (e: React.DragEvent) => {
     e.preventDefault()
+    e.stopPropagation()
     setDragOver(false)
-    const items = e.dataTransfer.files
-    if (items?.length) await ingest(items)
+    setBusy(true)
+    setError(null)
+    try {
+      const imported = await readDataTransfer(e.dataTransfer)
+      if (!imported.length) {
+        setError(
+          'No readable files found in the drop. Try a ZIP, folder, or source files.'
+        )
+        setBusy(false)
+        return
+      }
+      const det = detectProject(imported)
+      setPaths(imported)
+      setDetection(det)
+      if (!name.trim()) {
+        const hint =
+          imported.find((f) => f.path === 'package.json') ||
+          imported.find((f) => f.path === 'index.html') ||
+          imported[0]
+        const base =
+          hint.path.split('/')[0].replace(/\.[^.]+$/, '') || 'Imported Project'
+        setName(
+          base === 'package' || base === 'index' ? 'Imported Project' : base
+        )
+      }
+      setPhase('review')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to read drop')
+    } finally {
+      setBusy(false)
+    }
   }
 
   const submit = () => {

@@ -54,8 +54,11 @@ export interface ProjectFile {
   name: string
   path: string // e.g. "index.html" or "src/components/App.tsx"
   kind: FileKind
-  /** Only for kind === 'file' */
+  /** Only for kind === 'file' — text or base64 when encoding is 'base64' */
   content?: string
+  /** Binary assets store content as base64 */
+  encoding?: 'utf-8' | 'base64'
+  mimeType?: string
   parentId: string | null
   createdAt: string
   updatedAt: string
@@ -219,6 +222,41 @@ export function isTextFile(name: string): boolean {
     'json', 'svg', 'txt', 'md', 'markdown', 'py', 'sql', 'yml', 'yaml',
     'sh', 'bash', 'env', 'gitignore', 'toml', 'xml', 'vue', 'svelte',
   ].includes(ext)
+}
+
+const BINARY_EXT = new Set([
+  'png', 'jpg', 'jpeg', 'gif', 'webp', 'ico', 'bmp', 'avif',
+  'woff', 'woff2', 'ttf', 'otf', 'eot',
+  'mp3', 'wav', 'ogg', 'mp4', 'webm',
+  'pdf', 'zip',
+])
+
+export function isBinaryAsset(name: string): boolean {
+  const ext = name.split('.').pop()?.toLowerCase() ?? ''
+  return BINARY_EXT.has(ext)
+}
+
+export function mimeFromFilename(name: string): string {
+  const ext = name.split('.').pop()?.toLowerCase() ?? ''
+  const map: Record<string, string> = {
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    ico: 'image/x-icon',
+    bmp: 'image/bmp',
+    avif: 'image/avif',
+    svg: 'image/svg+xml',
+    woff: 'font/woff',
+    woff2: 'font/woff2',
+    ttf: 'font/ttf',
+    otf: 'font/otf',
+    mp3: 'audio/mpeg',
+    wav: 'audio/wav',
+    pdf: 'application/pdf',
+  }
+  return map[ext] || 'application/octet-stream'
 }
 
 export function languageFromFilename(name: string): EditorLanguage {

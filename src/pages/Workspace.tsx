@@ -46,6 +46,7 @@ export function Workspace({ project: initial, onBack }: WorkspaceProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [previewCollapsed, setPreviewCollapsed] = useState(false)
   const [outputLines, setOutputLines] = useState<string[]>([])
+  const [debugLines, setDebugLines] = useState<string[]>([])
   const [fullscreenEditor, setFullscreenEditor] = useState(false)
 
   // Command palette / go-to
@@ -817,6 +818,13 @@ export function Workspace({ project: initial, onBack }: WorkspaceProps) {
               error={ws.previewError}
               onRefresh={handleRun}
               onClearError={() => ws.setPreviewError(null)}
+              onPreviewMessage={(m) => {
+                const line = `[${m.level || m.type}] ${m.message}`
+                setDebugLines((prev) => [...prev.slice(-200), line])
+                if (m.type === 'error') {
+                  setOutputLines((prev) => [...prev, line])
+                }
+              }}
             />
           </div>
         )}
@@ -837,6 +845,7 @@ export function Workspace({ project: initial, onBack }: WorkspaceProps) {
         onChange={setBottomTab}
         diagnostics={diagnostics}
         outputLines={outputLines}
+        debugLines={debugLines}
         collapsed={bottomCollapsed}
         onToggleCollapse={() => setBottomCollapsed((c) => !c)}
         onGoToDiagnostic={handleGoToDiagnostic}

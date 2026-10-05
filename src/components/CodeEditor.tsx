@@ -152,14 +152,12 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
       const host = hostRef.current
       if (!host) return
 
-      // Save scroll from previous view if any
+      // Do not carry selection across different files
+      selectionPos.current = null
+      scrollPos.current = null
+
+      // Destroy previous view
       if (viewRef.current) {
-        scrollPos.current = {
-          top: viewRef.current.scrollDOM.scrollTop,
-          left: viewRef.current.scrollDOM.scrollLeft,
-        }
-        const sel = viewRef.current.state.selection.main
-        selectionPos.current = { anchor: sel.anchor, head: sel.head }
         viewRef.current.destroy()
         viewRef.current = null
       }
@@ -326,27 +324,14 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
       viewRef.current = view
       lastValue.current = value
 
-      // Restore selection if same file reopen within session (best-effort)
-      if (selectionPos.current) {
-        try {
-          const max = view.state.doc.length
-          const a = Math.min(selectionPos.current.anchor, max)
-          const h = Math.min(selectionPos.current.head, max)
-          view.dispatch({ selection: EditorSelection.single(a, h) })
-        } catch {
-          /* ignore */
-        }
-      }
+      // Focus once when a file is opened / created — user can type immediately
+      requestAnimationFrame(() => {
+        if (viewRef.current === view) view.focus()
+      })
 
       return () => {
-        if (viewRef.current) {
-          scrollPos.current = {
-            top: viewRef.current.scrollDOM.scrollTop,
-            left: viewRef.current.scrollDOM.scrollLeft,
-          }
-          const sel = viewRef.current.state.selection.main
-          selectionPos.current = { anchor: sel.anchor, head: sel.head }
-          viewRef.current.destroy()
+        if (viewRef.current === view) {
+          view.destroy()
           viewRef.current = null
         }
       }
@@ -354,11 +339,17 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [fileId, filename, readOnly])
 
-    // External value sync (e.g. undo from outside, format, or tab switch content)
+    // External value sync only when parent content differs from the live doc
     useEffect(() => {
       const view = viewRef.current
       if (!view) return
       if (value === lastValue.current) return
+      const current = view.state.doc.toString()
+      if (value === current) {
+        lastValue.current = value
+        return
+      }
+      // External change (format, undo from outside) — preserve cursor when possible
       const prevSel = view.state.selection.main
       const scrollTop = view.scrollDOM.scrollTop
       lastValue.current = value

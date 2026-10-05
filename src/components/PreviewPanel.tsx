@@ -8,6 +8,11 @@ interface PreviewPanelProps {
   error: string | null
   onRefresh: () => void
   onClearError: () => void
+  onPreviewMessage?: (msg: {
+    type: string
+    level?: string
+    message: string
+  }) => void
 }
 
 export function PreviewPanel({
@@ -16,13 +21,27 @@ export function PreviewPanel({
   error,
   onRefresh,
   onClearError,
+  onPreviewMessage,
 }: PreviewPanelProps) {
   const srcDoc = useMemo(() => buildPreviewDocument(files), [files, nonce])
 
   useEffect(() => {
     onClearError()
-    // nonce change = new run
   }, [nonce, onClearError])
+
+  useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      const data = event.data
+      if (!data || data.source !== 'vexdyn-forge-preview') return
+      onPreviewMessage?.({
+        type: data.type,
+        level: data.level,
+        message: data.message,
+      })
+    }
+    window.addEventListener('message', handler)
+    return () => window.removeEventListener('message', handler)
+  }, [onPreviewMessage])
 
   return (
     <aside className="preview-panel" aria-label="Project preview">

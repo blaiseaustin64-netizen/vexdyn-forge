@@ -94,11 +94,12 @@ export function detectFramework(project: Project): {
 
 function shouldInclude(file: ProjectFile): boolean {
   if (file.kind !== 'file') return false
-  if (file.content == null) return false
+  if (file.content == null || file.content === '') return false
   if (SKIP_NAMES.has(file.name)) return false
   const path = file.path.replace(/^\/+/, '')
   if (SKIP_PREFIXES.some((p) => path.startsWith(p))) return false
-  // Skip binary-looking large placeholders
+  // Cap very large embedded assets
+  if (file.encoding === 'base64' && file.content.length > 2_000_000) return false
   if (file.content.startsWith('data:') && file.content.length > 500_000) return false
   return true
 }
@@ -115,10 +116,11 @@ export function packageStaticProject(
   const files: DeployFilePayload[] = []
   for (const f of project.files ?? []) {
     if (!shouldInclude(f)) continue
+    const encoding = f.encoding === 'base64' ? 'base64' : 'utf-8'
     files.push({
       path: f.path.replace(/^\/+/, ''),
       content: f.content ?? '',
-      encoding: 'utf-8',
+      encoding,
     })
   }
 
