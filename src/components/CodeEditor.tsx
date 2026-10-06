@@ -339,7 +339,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [fileId, filename, readOnly])
 
-    // External value sync only when parent content differs from the live doc
+    // External value sync — never clobber in-progress typing
     useEffect(() => {
       const view = viewRef.current
       if (!view) return
@@ -349,7 +349,11 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
         lastValue.current = value
         return
       }
-      // External change (format, undo from outside) — preserve cursor when possible
+      // User is typing: parent prop can lag one frame — do not reset the doc
+      if (view.hasFocus && current.length >= value.length) {
+        lastValue.current = current
+        return
+      }
       const prevSel = view.state.selection.main
       const scrollTop = view.scrollDOM.scrollTop
       lastValue.current = value

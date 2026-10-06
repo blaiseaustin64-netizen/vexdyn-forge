@@ -30,6 +30,8 @@ export function useWorkspace(initial: Project) {
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const timer = useRef<number | null>(null)
+  const projectRef = useRef(project)
+  projectRef.current = project
 
   const files = project.files
   const activeFile = useMemo(
@@ -40,6 +42,7 @@ export function useWorkspace(initial: Project) {
   const persist = useCallback(
     (next: Project) => {
       const saved = projectStore.saveProject(next)
+      projectRef.current = saved
       setProject(saved)
       setSaveState('saved')
       setDirtyIds(new Set())
@@ -50,12 +53,15 @@ export function useWorkspace(initial: Project) {
 
   const scheduleSave = useCallback(
     (next: Project) => {
+      projectRef.current = next
       setProject(next)
       setSaveState('unsaved')
       if (timer.current) window.clearTimeout(timer.current)
       timer.current = window.setTimeout(() => {
+        // Persist whatever is latest at flush time (not a stale snapshot)
+        const latest = projectRef.current
         setSaveState('saving')
-        projectStore.saveProject(next)
+        projectStore.saveProject(latest)
         setSaveState('saved')
         setDirtyIds(new Set())
       }, 500)
@@ -77,9 +83,11 @@ export function useWorkspace(initial: Project) {
 
   const updateContent = useCallback(
     (fileId: string, content: string) => {
+      // Always read latest project so rapid keystrokes cannot clobber each other
+      const base = projectRef.current
       const next: Project = {
-        ...project,
-        files: project.files.map((f) =>
+        ...base,
+        files: base.files.map((f) =>
           f.id === fileId
             ? { ...f, content, updatedAt: new Date().toISOString() }
             : f
@@ -87,10 +95,11 @@ export function useWorkspace(initial: Project) {
         status: 'unsaved',
         updatedAt: new Date().toISOString(),
       }
+      projectRef.current = next
       setDirtyIds((prev) => new Set(prev).add(fileId))
       scheduleSave(next)
     },
-    [project, scheduleSave]
+    [scheduleSave]
   )
 
   const openFile = useCallback((file: ProjectFile) => {
@@ -115,18 +124,22 @@ export function useWorkspace(initial: Project) {
 
   const addFile = useCallback(
     (file: ProjectFile) => {
+      const base = projectRef.current
       const next: Project = {
-        ...project,
-        files: [...project.files, file],
+        ...base,
+        files: [...base.files, file],
         updatedAt: new Date().toISOString(),
       }
+      projectRef.current = next
       persist(next)
       if (file.kind === 'file' && isTextFile(file.name)) {
         setActiveFileId(file.id)
-        setOpenTabs((tabs) => [...tabs, file.id])
+        setOpenTabs((tabs) =>
+          tabs.includes(file.id) ? tabs : [...tabs, file.id]
+        )
       }
     },
-    [project, persist]
+    [persist]
   )
 
   const renameNode = useCallback(

@@ -154,7 +154,16 @@ export function Workspace({ project: initial, onBack }: WorkspaceProps) {
     }
     ws.addFile(node)
     setCreateKind(null)
-    if (node.kind === 'file') setMobilePane('code')
+    if (node.kind === 'file') {
+      setMobilePane('code')
+      // After modal unmount/focus-restore, put caret in the editor
+      window.setTimeout(() => {
+        editorRef.current?.focus()
+      }, 0)
+      window.setTimeout(() => {
+        editorRef.current?.focus()
+      }, 50)
+    }
   }
 
   const confirmRename = () => {
@@ -315,6 +324,20 @@ export function Workspace({ project: initial, onBack }: WorkspaceProps) {
   // Keyboard shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      // Never intercept while typing a filename, search, etc.
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable ||
+          target.closest('.modal') ||
+          target.closest('.modal-overlay'))
+      ) {
+        return
+      }
+
       const mod = e.metaKey || e.ctrlKey
       const shift = e.shiftKey
 
@@ -1015,12 +1038,25 @@ export function Workspace({ project: initial, onBack }: WorkspaceProps) {
         </label>
         <Input
           id="new-node-name"
+          name="new-node-name"
           value={createName}
-          onChange={(e) => setCreateName(e.target.value)}
+          onChange={(e) => {
+            setCreateName(e.target.value)
+            if (createError) setCreateError(null)
+          }}
           placeholder={createKind === 'folder' ? 'assets' : 'about.html'}
           autoFocus
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
           error={!!createError}
-          onKeyDown={(e) => e.key === 'Enter' && confirmCreate()}
+          onKeyDown={(e) => {
+            e.stopPropagation()
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              confirmCreate()
+            }
+          }}
         />
         {createError && (
           <p className="field-error" role="alert">
@@ -1047,7 +1083,13 @@ export function Workspace({ project: initial, onBack }: WorkspaceProps) {
           onChange={(e) => setRenameName(e.target.value)}
           autoFocus
           error={!!renameError}
-          onKeyDown={(e) => e.key === 'Enter' && confirmRename()}
+onKeyDown={(e) => {
+            e.stopPropagation()
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              confirmRename()
+            }
+          }}
         />
         {renameError && (
           <p className="field-error" role="alert">
