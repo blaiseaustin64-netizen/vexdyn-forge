@@ -5,11 +5,14 @@ import { Dashboard } from './pages/Dashboard'
 import { Workspace } from './pages/Workspace'
 import { Profile } from './pages/Profile'
 import { Settings } from './pages/Settings'
+import { SignIn } from './pages/SignIn'
+import { SignUp } from './pages/SignUp'
 import { CreateProjectModal } from './components/CreateProjectModal'
 import { ImportProjectModal } from './components/ImportProjectModal'
 import { RenameProjectModal } from './components/RenameProjectModal'
 import { DeleteProjectModal } from './components/DeleteProjectModal'
 import { useProjects } from './hooks/useProjects'
+import { useAuth } from './hooks/useAuth'
 import { projectStore } from './lib/projectStore'
 import type { ProjectDetection } from './lib/importProject'
 import { loadSettings } from './lib/settingsStore'
@@ -22,9 +25,11 @@ export type View =
   | 'workspace'
   | 'profile'
   | 'settings'
+  | 'signin'
+  | 'signup'
 
 /**
- * VEXDYN FORGE V1 — Finalization
+ * VEXDYN FORGE — shared VEXDYN Core authentication (Phase 1)
  */
 export default function App() {
   const {
@@ -40,6 +45,8 @@ export default function App() {
     refresh,
     hasProjects,
   } = useProjects()
+
+  const auth = useAuth()
 
   const [view, setView] = useState<View>(() =>
     hasProjects ? 'dashboard' : 'entry'
@@ -160,7 +167,7 @@ export default function App() {
         setView(hasProjects ? 'dashboard' : 'entry')
         return
       }
-      if (v === 'profile' || v === 'settings') {
+      if (v === 'profile' || v === 'settings' || v === 'signin' || v === 'signup') {
         setActiveProject(null)
         setView(v)
         return
@@ -170,16 +177,31 @@ export default function App() {
     [hasProjects, refresh]
   )
 
+  const afterAuthSuccess = useCallback(() => {
+    setView(hasProjects ? 'dashboard' : 'entry')
+  }, [hasProjects])
+
+  const handleSignOut = useCallback(async () => {
+    await auth.logout()
+    setView(hasProjects ? 'dashboard' : 'entry')
+  }, [auth, hasProjects])
+
   const showEntry = view === 'entry' && !hasProjects
   const inWorkspace = view === 'workspace' && activeProject
+  const hideNav =
+    inWorkspace || view === 'signin' || view === 'signup'
 
   return (
     <>
-      {!inWorkspace && (
+      {!hideNav && (
         <Nav
           currentView={view}
           onNavigate={handleNav}
           onCreate={openCreate}
+          authStatus={auth.status}
+          user={auth.user}
+          onSignIn={() => setView('signin')}
+          onSignOut={handleSignOut}
         />
       )}
 
@@ -189,6 +211,20 @@ export default function App() {
             <span className="spinner" aria-hidden />
             <p className="loading-text">Opening project…</p>
           </div>
+        ) : view === 'signin' ? (
+          <SignIn
+            auth={auth}
+            onSuccess={afterAuthSuccess}
+            onGoSignUp={() => setView('signup')}
+            onBack={() => setView(hasProjects ? 'dashboard' : 'entry')}
+          />
+        ) : view === 'signup' ? (
+          <SignUp
+            auth={auth}
+            onSuccess={afterAuthSuccess}
+            onGoSignIn={() => setView('signin')}
+            onBack={() => setView(hasProjects ? 'dashboard' : 'entry')}
+          />
         ) : showEntry ? (
           <EntryExperience
             onCreate={openCreate}
@@ -200,7 +236,14 @@ export default function App() {
             onBack={handleBackToDashboard}
           />
         ) : view === 'profile' ? (
-          <Profile onBack={() => setView(hasProjects ? 'dashboard' : 'entry')} />
+          <Profile
+            onBack={() => setView(hasProjects ? 'dashboard' : 'entry')}
+            authStatus={auth.status}
+            user={auth.user}
+            memberships={auth.memberships}
+            onSignIn={() => setView('signin')}
+            onSignOut={handleSignOut}
+          />
         ) : view === 'settings' ? (
           <Settings onBack={() => setView(hasProjects ? 'dashboard' : 'entry')} />
         ) : (

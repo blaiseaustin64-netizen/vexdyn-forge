@@ -1,16 +1,39 @@
 import type { View } from '../App'
 import { Button } from './Button'
-import { loadProfile } from '../lib/accountStore'
+import type { PublicUser } from '../lib/authApi'
+import type { AuthStatus } from '../hooks/useAuth'
 
 interface NavProps {
   currentView: View
   onNavigate: (view: View) => void
   onCreate: () => void
+  authStatus: AuthStatus
+  user: PublicUser | null
+  onSignIn: () => void
+  onSignOut: () => void
 }
 
-export function Nav({ currentView, onNavigate, onCreate }: NavProps) {
-  const profile = loadProfile()
-  const initial = (profile.displayName.trim()[0] || 'U').toUpperCase()
+function initials(user: PublicUser | null): string {
+  if (!user) return '?'
+  const name = (user.displayName || user.email || 'U').trim()
+  const parts = name.split(/\s+/).filter(Boolean)
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+  }
+  return name.slice(0, 2).toUpperCase()
+}
+
+export function Nav({
+  currentView,
+  onNavigate,
+  onCreate,
+  authStatus,
+  user,
+  onSignIn,
+  onSignOut,
+}: NavProps) {
+  const authed = authStatus === 'authenticated' && user
+  const loading = authStatus === 'loading'
 
   return (
     <header className="nav" role="banner">
@@ -76,15 +99,36 @@ export function Nav({ currentView, onNavigate, onCreate }: NavProps) {
         >
           + New
         </Button>
-        <button
-          className="nav-avatar"
-          aria-label="Open profile"
-          title={profile.displayName}
-          type="button"
-          onClick={() => onNavigate('profile')}
-        >
-          {initial}
-        </button>
+
+        {loading ? (
+          <span className="nav-auth-loading" aria-label="Checking session">
+            …
+          </span>
+        ) : authed ? (
+          <>
+            <button
+              className="nav-avatar"
+              aria-label="Open account"
+              title={user.email}
+              type="button"
+              onClick={() => onNavigate('profile')}
+            >
+              {initials(user)}
+            </button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onSignOut}
+              className="hide-mobile nav-signout"
+            >
+              Sign out
+            </Button>
+          </>
+        ) : (
+          <Button variant="secondary" size="sm" onClick={onSignIn}>
+            Sign in
+          </Button>
+        )}
       </div>
     </header>
   )
