@@ -5224,3 +5224,59 @@ button .forge-icon {
 .nav-signout {
   margin-left: 4px;
 }
+
+/* —— Production update banner (non-blocking) —— */
+.update-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--bg-elevated, #111823);
+  border-bottom: 1px solid var(--border, #1e2a38);
+  color: var(--text, #e8eef5);
+  font-size: 13px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+}
+
+.update-banner-text {
+  color: var(--silver-bright, #c0c8d0);
+}
+
+.update-banner-btn {
+  appearance: none;
+  border: 1px solid var(--accent, #3B6EA5);
+  background: var(--accent-muted, rgba(59, 110, 165, 0.14));
+  color: var(--accent-secondary, #5B8DC7);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.update-banner-btn:hover {
+  background: var(--accent-soft, rgba(59, 110, 165, 0.08));
+  border-color: var(--accent-hover, #4a7db4);
+}
+
+.update-banner-dismiss {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--mute, var(--silver, #9AA5B1));
+  font-size: 18px;
+  line-height: 1;
+  padding: 2px 6px;
+  cursor: pointer;
+  margin-left: 4px;
+}
+
+.update-banner-dismiss:hover {
+  color: var(--text, #e8eef5);
+}

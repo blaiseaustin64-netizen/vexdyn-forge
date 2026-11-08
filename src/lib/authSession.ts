@@ -3,11 +3,11 @@
  *
  * Matches the main website convention (key: vexdyn_session) so the same
  * browser patterns apply. Tokens are opaque and verified only by the backend.
- * Cross-origin cookies cannot be shared across *.pages.dev hosts; the backend
+ * Cross-origin cookies cannot be shared across product domains; the backend
  * therefore expects Authorization: Bearer / X-Session-Token headers.
  *
- * Note: localStorage is origin-scoped. Signing into vexdyn.pages.dev does NOT
- * automatically authenticate vexdyn-forge.pages.dev. Use the handoff endpoints
+ * Note: localStorage is origin-scoped. Signing into vexdyn.tech does NOT
+ * automatically authenticate forge.vexdyn.tech. Use the handoff endpoints
  * for secure SSO between products.
  */
 

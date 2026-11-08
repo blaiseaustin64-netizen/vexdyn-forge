@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react'
 import { Nav } from './components/Nav'
+import { UpdateBanner } from './components/UpdateBanner'
 import { EntryExperience } from './pages/EntryExperience'
 import { Dashboard } from './pages/Dashboard'
 import { Workspace } from './pages/Workspace'
@@ -193,6 +194,7 @@ export default function App() {
 
   return (
     <>
+      <UpdateBanner />
       {!hideNav && (
         <Nav
           currentView={view}

@@ -2,9 +2,11 @@
 
 Browser IDE for VEXDYN — edit locally, deploy for real.
 
+**Official domains:** [vexdyn.tech](https://vexdyn.tech) · [forge.vexdyn.tech](https://forge.vexdyn.tech)
+
 ## v1.6 — Real project deployment
 
-Static HTML/CSS/JS → VEXDYN deploy Worker → Cloudflare Pages → live `.pages.dev` URL.
+Static HTML/CSS/JS → VEXDYN deploy Worker → Cloudflare Pages → live project URL (default `*.pages.dev` until custom domains are enabled).
 
 ### Frontend
 

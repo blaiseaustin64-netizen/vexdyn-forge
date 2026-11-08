@@ -108,11 +108,11 @@ export function SignIn({ auth, onSuccess, onGoSignUp, onBack }: SignInProps) {
         <p className="shell-note auth-hint">
           Forgot password? Use the reset flow on{' '}
           <a
-            href="https://vexdyn.pages.dev/#signin"
+            href="https://vexdyn.tech"
             target="_blank"
             rel="noopener noreferrer"
           >
-            vexdyn.pages.dev
+            vexdyn.tech
           </a>
           .
         </p>
